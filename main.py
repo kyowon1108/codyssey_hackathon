@@ -3,9 +3,10 @@ import uuid
 import random
 import asyncio
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 # FastAPI 앱 생성
 app = FastAPI(
@@ -20,6 +21,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
+# Mount static files directory (if it exists)
+static_dir = Path(__file__).parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 # 작업 관리용 전역 변수
 jobs = {}  # job_id -> 정보(dict: status, pub_key, etc.)
@@ -216,18 +222,54 @@ async def process_job(job_id: str):
                 env["LD_LIBRARY_PATH"] = f"{torch_lib}:{env.get('LD_LIBRARY_PATH', '')}"
                 env["PYTHONPATH"] = str(Path(__file__).resolve().parent / "gaussian-splatting")
 
+                # Train for 30000 iterations with checkpoints at 10k, 20k, 30k
                 gs_train_cmd = [
                     conda_python,
                     gs_script,
                     "-s", str(work_path),
                     "-m", str(gs_output_dir),
-                    "--iterations", "7000"
+                    "--iterations", "30000",
+                    "--save_iterations", "10000", "20000", "30000"
                 ]
 
                 try:
                     await run_command(gs_train_cmd, log_file, env=env)
                     log_file.write(">> [6/6] Gaussian Splatting 학습 완료!\n")
                     log_file.flush()
+
+                    # Convert and cleanup: keep only the latest checkpoint
+                    import subprocess
+                    point_cloud_dir = gs_output_dir / "point_cloud"
+
+                    # Process each checkpoint
+                    for iteration in [10000, 20000, 30000]:
+                        iter_dir = point_cloud_dir / f"iteration_{iteration}"
+                        if iter_dir.exists():
+                            ply_file = iter_dir / "point_cloud.ply"
+                            splat_file = iter_dir / "scene.splat"
+
+                            # Convert PLY to splat format
+                            if ply_file.exists() and not splat_file.exists():
+                                log_file.write(f">> Converting iteration {iteration} to splat format...\n")
+                                log_file.flush()
+                                convert_cmd = [
+                                    "python",
+                                    str(Path(__file__).resolve().parent / "convert_to_splat.py"),
+                                    str(ply_file),
+                                    str(splat_file)
+                                ]
+                                subprocess.run(convert_cmd, check=True)
+
+                            # Delete previous checkpoint
+                            if iteration > 10000:
+                                prev_iteration = iteration - 10000
+                                prev_dir = point_cloud_dir / f"iteration_{prev_iteration}"
+                                if prev_dir.exists():
+                                    import shutil
+                                    log_file.write(f">> Removing previous checkpoint: iteration_{prev_iteration}\n")
+                                    log_file.flush()
+                                    shutil.rmtree(prev_dir)
+
                 except Exception as gs_error:
                     log_file.write(f"[WARNING] Gaussian Splatting failed: {str(gs_error)}\n")
                     log_file.write("Continuing with COLMAP results only...\n")
@@ -359,7 +401,7 @@ async def get_job_status(job_id: str):
 
 
 @app.get("/v/{pub_key}", summary="3D 결과 뷰어 페이지", response_class=HTMLResponse)
-async def view_result_page(pub_key: str):
+async def view_result_page(pub_key: str, request: Request):
     # 주어진 공개 키에 해당하는 job 찾기
     job_id = pub_to_job.get(pub_key)
     if job_id is None or job_id not in jobs:
@@ -370,216 +412,15 @@ async def view_result_page(pub_key: str):
         # 아직 완료되지 않은 경우 대기 메시지 표시 (간단한 HTML 반환)
         return HTMLResponse(content="<html><body><h3>Result is not ready yet. Please check again later.</h3></body></html>")
 
-    # Gaussian Splat 뷰어 HTML 페이지 생성 및 반환
-    html_content = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Gaussian Splatting Viewer</title>
-    <style>
-        body {{
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background-color: #000;
-            font-family: Arial, sans-serif;
-        }}
-        #container {{
-            width: 100vw;
-            height: 100vh;
-        }}
-        #info {{
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            color: white;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 10px;
-            border-radius: 5px;
-            font-size: 14px;
-            z-index: 1000;
-        }}
-        #progress {{
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: white;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 20px 40px;
-            border-radius: 10px;
-            font-size: 18px;
-            z-index: 1000;
-        }}
-    </style>
-</head>
-<body>
-    <div id="progress">Loading: 0%</div>
-    <div id="info" style="display: none;">
-        <strong>Controls:</strong><br>
-        Left Mouse: Rotate<br>
-        Right Mouse: Pan<br>
-        Scroll: Zoom
-    </div>
-    <div id="container"></div>
+    # Load simple Three.js viewer template
+    viewer_path = Path(__file__).parent / "viewer_template.html"
+    with open(viewer_path, 'r') as f:
+        html_content = f.read()
 
-    <script type="importmap">
-    {{
-        "imports": {{
-            "three": "https://cdn.jsdelivr.net/npm/three@0.167.0/build/three.module.js",
-            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.167.0/examples/jsm/"
-        }}
-    }}
-    </script>
-
-    <script type="module">
-        import * as THREE from 'three';
-        import {{ OrbitControls }} from 'three/addons/controls/OrbitControls.js';
-
-        const progressDiv = document.getElementById('progress');
-        const infoDiv = document.getElementById('info');
-        const container = document.getElementById('container');
-
-        // Scene setup
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x000000);
-
-        const camera = new THREE.PerspectiveCamera(
-            75,
-            window.innerWidth / window.innerHeight,
-            0.1,
-            1000
-        );
-        camera.position.set(0, 0, 5);
-
-        const renderer = new THREE.WebGLRenderer({{ antialias: true }});
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
-        container.appendChild(renderer.domElement);
-
-        const controls = new OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
-
-        // Load splat file
-        fetch('/recon/pub/{pub_key}/scene.splat')
-            .then(response => {{
-                if (!response.ok) throw new Error('Failed to load scene');
-                const reader = response.body.getReader();
-                const contentLength = +response.headers.get('Content-Length');
-                let receivedLength = 0;
-                let chunks = [];
-
-                return reader.read().then(function processResult(result) {{
-                    if (result.done) {{
-                        const allChunks = new Uint8Array(receivedLength);
-                        let position = 0;
-                        for (let chunk of chunks) {{
-                            allChunks.set(chunk, position);
-                            position += chunk.length;
-                        }}
-                        return allChunks;
-                    }}
-
-                    chunks.push(result.value);
-                    receivedLength += result.value.length;
-
-                    if (contentLength) {{
-                        const percent = Math.round((receivedLength / contentLength) * 100);
-                        progressDiv.textContent = `Loading: ${{percent}}%`;
-                    }}
-
-                    return reader.read().then(processResult);
-                }});
-            }})
-            .then(data => {{
-                progressDiv.textContent = 'Processing...';
-                return parseSplatData(data);
-            }})
-            .then(splatData => {{
-                createSplatMesh(splatData);
-                progressDiv.style.display = 'none';
-                infoDiv.style.display = 'block';
-            }})
-            .catch(error => {{
-                progressDiv.textContent = `Error: ${{error.message}}`;
-                console.error('Error loading splat:', error);
-            }});
-
-        function parseSplatData(data) {{
-            const view = new DataView(data.buffer);
-            const vertexCount = data.length / 44; // Each splat is 44 bytes
-
-            const positions = new Float32Array(vertexCount * 3);
-            const colors = new Float32Array(vertexCount * 3);
-
-            for (let i = 0; i < vertexCount; i++) {{
-                const offset = i * 44;
-
-                // Position (3 floats)
-                positions[i * 3] = view.getFloat32(offset, true);
-                positions[i * 3 + 1] = view.getFloat32(offset + 4, true);
-                positions[i * 3 + 2] = view.getFloat32(offset + 8, true);
-
-                // Skip scale (3 floats = 12 bytes)
-
-                // Color (4 bytes: R, G, B, opacity)
-                colors[i * 3] = view.getUint8(offset + 24) / 255;
-                colors[i * 3 + 1] = view.getUint8(offset + 25) / 255;
-                colors[i * 3 + 2] = view.getUint8(offset + 26) / 255;
-            }}
-
-            return {{ positions, colors, count: vertexCount }};
-        }}
-
-        function createSplatMesh(splatData) {{
-            const geometry = new THREE.BufferGeometry();
-            geometry.setAttribute('position', new THREE.BufferAttribute(splatData.positions, 3));
-            geometry.setAttribute('color', new THREE.BufferAttribute(splatData.colors, 3));
-            geometry.computeBoundingSphere();
-
-            const material = new THREE.PointsMaterial({{
-                size: 0.01,
-                vertexColors: true,
-                sizeAttenuation: true
-            }});
-
-            const points = new THREE.Points(geometry, material);
-            scene.add(points);
-
-            // Center camera
-            if (geometry.boundingSphere) {{
-                const center = geometry.boundingSphere.center;
-                const radius = geometry.boundingSphere.radius;
-                camera.position.set(center.x, center.y, center.z + radius * 2);
-                camera.lookAt(center);
-                controls.target.copy(center);
-                controls.update();
-            }}
-        }}
-
-        // Animation loop
-        function animate() {{
-            requestAnimationFrame(animate);
-            controls.update();
-            renderer.render(scene, camera);
-        }}
-        animate();
-
-        // Handle window resize
-        window.addEventListener('resize', () => {{
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }});
-    </script>
-</body>
-</html>
-"""
+    # Use relative URL for same-origin request
+    splat_url = f"/recon/pub/{pub_key}/scene.splat"
+    html_content = html_content.replace('SPLAT_URL_PLACEHOLDER', splat_url)
     return HTMLResponse(content=html_content, status_code=200)
-
 
 @app.get("/recon/pub/{pub_key}/cloud.ply", summary="생성된 포인트클라우드 PLY 파일 다운로드")
 async def download_ply(pub_key: str):
@@ -591,10 +432,12 @@ async def download_ply(pub_key: str):
     if jobs[job_id].get("status") != "DONE":
         raise HTTPException(status_code=400, detail="Result not ready")
 
-    # Gaussian Splatting 결과를 먼저 확인 (더 좋은 품질)
-    gs_ply = Path(BASE_DIR / job_id / "gs_output" / "point_cloud" / "iteration_7000" / "point_cloud.ply")
-    if gs_ply.exists():
-        return FileResponse(path=gs_ply, filename="cloud.ply", media_type="application/octet-stream")
+    # Gaussian Splatting 결과를 먼저 확인 (더 좋은 품질) - latest checkpoint
+    point_cloud_dir = Path(BASE_DIR / job_id / "gs_output" / "point_cloud")
+    for iteration in [30000, 20000, 10000, 7000]:
+        gs_ply = point_cloud_dir / f"iteration_{iteration}" / "point_cloud.ply"
+        if gs_ply.exists():
+            return FileResponse(path=gs_ply, filename="cloud.ply", media_type="application/octet-stream")
 
     # GS 결과가 없으면 COLMAP sparse 결과 사용
     colmap_ply = Path(BASE_DIR / job_id / "export" / "cloud.ply")
@@ -614,10 +457,23 @@ async def download_splat(pub_key: str):
     if jobs[job_id].get("status") != "DONE":
         raise HTTPException(status_code=400, detail="Result not ready")
 
-    # Gaussian Splatting splat 파일 확인
-    splat_file = Path(BASE_DIR / job_id / "gs_output" / "point_cloud" / "iteration_7000" / "scene.splat")
-    if splat_file.exists():
-        return FileResponse(path=splat_file, filename="scene.splat", media_type="application/octet-stream")
+    # Find the latest checkpoint (check 30k, 20k, 10k in order)
+    point_cloud_dir = Path(BASE_DIR / job_id / "gs_output" / "point_cloud")
+    for iteration in [30000, 20000, 10000, 7000]:
+        splat_file = point_cloud_dir / f"iteration_{iteration}" / "scene.splat"
+        if splat_file.exists():
+            # Add iteration info as custom header
+            from fastapi import Response
+            with open(splat_file, 'rb') as f:
+                content = f.read()
+            return Response(
+                content=content,
+                media_type="application/octet-stream",
+                headers={
+                    "X-Iteration": str(iteration),
+                    "Content-Disposition": f"attachment; filename=scene_{iteration}.splat"
+                }
+            )
 
     raise HTTPException(status_code=404, detail="scene.splat not found")
 
