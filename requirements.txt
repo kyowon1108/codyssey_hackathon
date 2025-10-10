@@ -1,0 +1,20 @@
+# FastAPI and web server dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# COLMAP Python bindings
+pycolmap>=3.12.0
+
+# PyTorch and related packages (CUDA 12.8 compatible)
+# Install separately with: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+# torch>=2.0.0
+# torchvision>=0.15.0
+# torchaudio>=2.0.0
+
+# Gaussian Splatting dependencies
+# (These are typically in gaussian-splatting/requirements.txt)
+# Common dependencies:
+plyfile>=0.8.1
+tqdm>=4.65.0
+pillow>=10.0.0
