@@ -38,6 +38,57 @@ BASE_DIR = Path(__file__).resolve().parent / "data" / "jobs"
 BASE_DIR.mkdir(parents=True, exist_ok=True)
 
 
+# 서버 시작 시 기존 작업 복구 함수
+def recover_existing_jobs():
+    """
+    서버 재시작 시 data/jobs 디렉토리에서 기존 작업들을 복구합니다.
+    """
+    if not BASE_DIR.exists():
+        return
+
+    recovered_count = 0
+    for job_dir in BASE_DIR.iterdir():
+        if not job_dir.is_dir():
+            continue
+
+        job_id = job_dir.name
+        key_file = job_dir / "key.txt"
+
+        # pub_key 파일이 있는지 확인
+        if not key_file.exists():
+            continue
+
+        try:
+            with open(key_file, 'r') as f:
+                pub_key = f.read().strip()
+
+            # 작업 상태 확인 - scene.splat 파일이 있으면 DONE
+            splat_file = job_dir / "gs_output" / "point_cloud" / "iteration_10000" / "scene.splat"
+            if splat_file.exists():
+                status = "DONE"
+            else:
+                # splat 파일이 없으면 PENDING으로 (재시작 필요할 수도)
+                status = "PENDING"
+
+            # 메모리에 작업 정보 복구
+            jobs[job_id] = {
+                "status": status,
+                "pub_key": pub_key
+            }
+            pub_to_job[pub_key] = job_id
+            recovered_count += 1
+            print(f"Recovered job: {job_id} (pub_key: {pub_key}, status: {status})")
+
+        except Exception as e:
+            print(f"Failed to recover job {job_id}: {e}")
+
+    print(f"Total recovered jobs: {recovered_count}")
+
+
+# 서버 시작 시 기존 작업 복구
+recover_existing_jobs()
+
+
 # GPU 메모리 사용량 체크 함수
 def get_gpu_memory_usage():
     """
