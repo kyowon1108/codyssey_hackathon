@@ -38,8 +38,36 @@ BASE_DIR = Path(__file__).resolve().parent / "data" / "jobs"
 BASE_DIR.mkdir(parents=True, exist_ok=True)
 
 
+# GPU 메모리 사용량 체크 함수
+def get_gpu_memory_usage():
+    """
+    nvidia-smi를 사용하여 GPU 메모리 사용량을 반환합니다.
+    """
+    try:
+        import subprocess
+        result = subprocess.run(
+            ['nvidia-smi', '--query-gpu=memory.used,memory.total', '--format=csv,noheader,nounits'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            lines = result.stdout.strip().split('\n')
+            gpu_info = []
+            for i, line in enumerate(lines):
+                used, total = line.split(',')
+                used_mb = int(used.strip())
+                total_mb = int(total.strip())
+                percent = (used_mb / total_mb * 100) if total_mb > 0 else 0
+                gpu_info.append(f"GPU {i}: {used_mb}MB / {total_mb}MB ({percent:.1f}%)")
+            return " | ".join(gpu_info)
+    except Exception as e:
+        return f"GPU memory check failed: {str(e)}"
+    return "N/A"
+
+
 # COLMAP 및 Gaussian Splatting 실행을 비동기 처리하기 위한 유틸리티 함수
-async def run_command(cmd: list, log_file, cwd: Path = None, env: dict = None):
+async def run_command(cmd: list, log_file, cwd: Path = None, env: dict = None, monitor_gpu: bool = False):
     """
     주어진 명령(cmd 리스트)을 서브프로세스로 실행하고, 출력 스트림을 실시간 로그 파일에 기록합니다.
     오류 발생 시 예외를 발생시켜 상위에서 처리합니다.
@@ -53,6 +81,10 @@ async def run_command(cmd: list, log_file, cwd: Path = None, env: dict = None):
         stderr=asyncio.subprocess.STDOUT
     )
 
+    # GPU 모니터링 카운터
+    gpu_check_counter = 0
+    GPU_CHECK_INTERVAL = 20  # 20번의 읽기마다 GPU 체크 (약 20초마다)
+
     # 출력 스트림을 읽어가며 로그 파일에 기록
     # tqdm progress bar는 매우 긴 한 줄로 나올 수 있으므로 chunk 단위로 읽음
     while True:
@@ -64,10 +96,28 @@ async def run_command(cmd: list, log_file, cwd: Path = None, env: dict = None):
             text = chunk.decode(errors="ignore")
             log_file.write(text)
             log_file.flush()
+
+            # GPU 메모리 모니터링 (monitor_gpu가 True일 때만)
+            if monitor_gpu:
+                gpu_check_counter += 1
+                if gpu_check_counter >= GPU_CHECK_INTERVAL:
+                    gpu_check_counter = 0
+                    gpu_mem = get_gpu_memory_usage()
+                    log_file.write(f"\n[GPU Memory] {gpu_mem}\n")
+                    log_file.flush()
+
         except asyncio.TimeoutError:
             # 타임아웃 발생 시 프로세스가 아직 실행 중인지 확인
             if process.returncode is not None:
                 break
+            # GPU 메모리 체크 (타임아웃 시에도)
+            if monitor_gpu:
+                gpu_check_counter += 1
+                if gpu_check_counter >= GPU_CHECK_INTERVAL:
+                    gpu_check_counter = 0
+                    gpu_mem = get_gpu_memory_usage()
+                    log_file.write(f"\n[GPU Memory] {gpu_mem}\n")
+                    log_file.flush()
             # 아직 실행 중이면 계속 읽기
             continue
 
@@ -208,6 +258,11 @@ async def process_job(job_id: str):
                 log_file.write(">> [5/6] Gaussian Splatting 학습 (train.py) 시작...\n")
                 log_file.flush()
 
+                # GPU 메모리 체크 (학습 시작 전)
+                gpu_mem_before = get_gpu_memory_usage()
+                log_file.write(f">> [GPU Memory - Before Training] {gpu_mem_before}\n")
+                log_file.flush()
+
                 gs_output_dir = job_dir / "gs_output"
                 gs_output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -222,53 +277,52 @@ async def process_job(job_id: str):
                 env["LD_LIBRARY_PATH"] = f"{torch_lib}:{env.get('LD_LIBRARY_PATH', '')}"
                 env["PYTHONPATH"] = str(Path(__file__).resolve().parent / "gaussian-splatting")
 
-                # Train for 30000 iterations with checkpoints at 10k, 20k, 30k
+                # Train for 10k iterations only with speed optimizations
                 gs_train_cmd = [
                     conda_python,
                     gs_script,
                     "-s", str(work_path),
                     "-m", str(gs_output_dir),
-                    "--iterations", "30000",
-                    "--save_iterations", "10000", "20000", "30000"
+                    "--iterations", "10000",
+                    "--save_iterations", "10000",
+                    "--densify_until_iter", "5000",  # Stop densification at 5k instead of 15k
+                    "--densification_interval", "200",  # Reduce densification frequency
+                    "--opacity_reset_interval", "10000",  # Disable opacity reset during training
+                    "--resolution", "1"  # Use original resolution (we already resized to 1600px)
+                    # Note: sparse_adam requires additional compilation (3dgs_accel package)
                 ]
 
                 try:
-                    await run_command(gs_train_cmd, log_file, env=env)
+                    await run_command(gs_train_cmd, log_file, env=env, monitor_gpu=True)
                     log_file.write(">> [6/6] Gaussian Splatting 학습 완료!\n")
                     log_file.flush()
 
-                    # Convert and cleanup: keep only the latest checkpoint
+                    # GPU 메모리 체크 (학습 완료 후)
+                    gpu_mem_after = get_gpu_memory_usage()
+                    log_file.write(f">> [GPU Memory - After Training] {gpu_mem_after}\n")
+                    log_file.flush()
+
+                    # Convert to splat format
                     import subprocess
                     point_cloud_dir = gs_output_dir / "point_cloud"
+                    iter_dir = point_cloud_dir / "iteration_10000"
 
-                    # Process each checkpoint
-                    for iteration in [10000, 20000, 30000]:
-                        iter_dir = point_cloud_dir / f"iteration_{iteration}"
-                        if iter_dir.exists():
-                            ply_file = iter_dir / "point_cloud.ply"
-                            splat_file = iter_dir / "scene.splat"
+                    if iter_dir.exists():
+                        ply_file = iter_dir / "point_cloud.ply"
+                        splat_file = iter_dir / "scene.splat"
 
-                            # Convert PLY to splat format
-                            if ply_file.exists() and not splat_file.exists():
-                                log_file.write(f">> Converting iteration {iteration} to splat format...\n")
-                                log_file.flush()
-                                convert_cmd = [
-                                    "python",
-                                    str(Path(__file__).resolve().parent / "convert_to_splat.py"),
-                                    str(ply_file),
-                                    str(splat_file)
-                                ]
-                                subprocess.run(convert_cmd, check=True)
-
-                            # Delete previous checkpoint
-                            if iteration > 10000:
-                                prev_iteration = iteration - 10000
-                                prev_dir = point_cloud_dir / f"iteration_{prev_iteration}"
-                                if prev_dir.exists():
-                                    import shutil
-                                    log_file.write(f">> Removing previous checkpoint: iteration_{prev_iteration}\n")
-                                    log_file.flush()
-                                    shutil.rmtree(prev_dir)
+                        if ply_file.exists() and not splat_file.exists():
+                            log_file.write(">> Converting to splat format...\n")
+                            log_file.flush()
+                            convert_cmd = [
+                                "python",
+                                str(Path(__file__).resolve().parent / "convert_to_splat.py"),
+                                str(ply_file),
+                                str(splat_file)
+                            ]
+                            subprocess.run(convert_cmd, check=True)
+                            log_file.write(">> Conversion complete!\n")
+                            log_file.flush()
 
                 except Exception as gs_error:
                     log_file.write(f"[WARNING] Gaussian Splatting failed: {str(gs_error)}\n")
@@ -341,13 +395,36 @@ async def create_reconstruction_job(files: list[UploadFile] = File(...)):
     (job_dir / "upload" / "images").mkdir(parents=True, exist_ok=True)
     (job_dir / "colmap").mkdir(parents=True, exist_ok=True)
 
-    # 업로드된 이미지들을 저장
+    # 업로드된 이미지들을 저장 및 리사이징 (최대 1600px - GS default)
+    from PIL import Image
+    import io
+
+    MAX_WIDTH = 1600
+    MAX_HEIGHT = 1600
+
     for file in files:
-        # 파일 이름이 중복되면 덮어쓰지 않도록 고유 이름 추가 가능 (여기서는 그대로 사용)
         content = await file.read()
         img_path = job_dir / "upload" / "images" / file.filename
-        with open(img_path, 'wb') as f:
-            f.write(content)
+
+        # 이미지 리사이징
+        try:
+            img = Image.open(io.BytesIO(content))
+            width, height = img.size
+
+            # 최대 해상도를 넘으면 리사이징
+            if width > MAX_WIDTH or height > MAX_HEIGHT:
+                # 비율 유지하면서 리사이징
+                ratio = min(MAX_WIDTH / width, MAX_HEIGHT / height)
+                new_width = int(width * ratio)
+                new_height = int(height * ratio)
+                img = img.resize((new_width, new_height), Image.LANCZOS)
+
+            # 리사이징된 이미지 저장
+            img.save(img_path, quality=95)
+        except Exception as e:
+            # 이미지 처리 실패 시 원본 저장
+            with open(img_path, 'wb') as f:
+                f.write(content)
 
     # 작업 초기 상태 저장
     jobs[job_id] = {
@@ -409,7 +486,7 @@ async def view_result_page(pub_key: str, request: Request):
 
     # 작업이 완료되었는지 확인
     if jobs[job_id].get("status") != "DONE":
-        # 아직 완료되지 않은 경우 대기 메시지 표시 (간단한 HTML 반환)
+        # 아직 완료되지 않은 경우 대기 메시지 표시
         return HTMLResponse(content="<html><body><h3>Result is not ready yet. Please check again later.</h3></body></html>")
 
     # Load simple Three.js viewer template
@@ -432,12 +509,10 @@ async def download_ply(pub_key: str):
     if jobs[job_id].get("status") != "DONE":
         raise HTTPException(status_code=400, detail="Result not ready")
 
-    # Gaussian Splatting 결과를 먼저 확인 (더 좋은 품질) - latest checkpoint
-    point_cloud_dir = Path(BASE_DIR / job_id / "gs_output" / "point_cloud")
-    for iteration in [30000, 20000, 10000, 7000]:
-        gs_ply = point_cloud_dir / f"iteration_{iteration}" / "point_cloud.ply"
-        if gs_ply.exists():
-            return FileResponse(path=gs_ply, filename="cloud.ply", media_type="application/octet-stream")
+    # Gaussian Splatting 결과 확인 (iteration_10000)
+    gs_ply = Path(BASE_DIR / job_id / "gs_output" / "point_cloud" / "iteration_10000" / "point_cloud.ply")
+    if gs_ply.exists():
+        return FileResponse(path=gs_ply, filename="cloud.ply", media_type="application/octet-stream")
 
     # GS 결과가 없으면 COLMAP sparse 결과 사용
     colmap_ply = Path(BASE_DIR / job_id / "export" / "cloud.ply")
@@ -457,23 +532,21 @@ async def download_splat(pub_key: str):
     if jobs[job_id].get("status") != "DONE":
         raise HTTPException(status_code=400, detail="Result not ready")
 
-    # Find the latest checkpoint (check 30k, 20k, 10k in order)
-    point_cloud_dir = Path(BASE_DIR / job_id / "gs_output" / "point_cloud")
-    for iteration in [30000, 20000, 10000, 7000]:
-        splat_file = point_cloud_dir / f"iteration_{iteration}" / "scene.splat"
-        if splat_file.exists():
-            # Add iteration info as custom header
-            from fastapi import Response
-            with open(splat_file, 'rb') as f:
-                content = f.read()
-            return Response(
-                content=content,
-                media_type="application/octet-stream",
-                headers={
-                    "X-Iteration": str(iteration),
-                    "Content-Disposition": f"attachment; filename=scene_{iteration}.splat"
-                }
-            )
+    # Check iteration_10000 only
+    splat_file = Path(BASE_DIR / job_id / "gs_output" / "point_cloud" / "iteration_10000" / "scene.splat")
+    if splat_file.exists():
+        # Add iteration info as custom header
+        from fastapi import Response
+        with open(splat_file, 'rb') as f:
+            content = f.read()
+        return Response(
+            content=content,
+            media_type="application/octet-stream",
+            headers={
+                "X-Iteration": "10000",
+                "Content-Disposition": "attachment; filename=scene_10000.splat"
+            }
+        )
 
     raise HTTPException(status_code=404, detail="scene.splat not found")
 

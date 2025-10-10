@@ -102,15 +102,12 @@ def convert_ply_to_splat(ply_path, splat_path):
 if __name__ == "__main__":
     import sys
 
-    if len(sys.argv) < 2:
-        print("Usage: python convert_to_splat.py <job_id>")
+    if len(sys.argv) < 3:
+        print("Usage: python convert_to_splat.py <ply_file> <splat_file>")
         sys.exit(1)
 
-    job_id = sys.argv[1]
-    base_dir = Path(__file__).parent / "data" / "jobs" / job_id
-
-    ply_path = base_dir / "gs_output" / "point_cloud" / "iteration_7000" / "point_cloud.ply"
-    splat_path = base_dir / "gs_output" / "point_cloud" / "iteration_7000" / "scene.splat"
+    ply_path = Path(sys.argv[1])
+    splat_path = Path(sys.argv[2])
 
     if not ply_path.exists():
         print(f"Error: PLY file not found: {ply_path}")
