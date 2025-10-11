@@ -317,16 +317,16 @@ async def process_job(job_id: str):
                 gs_output_dir = job_dir / "gs_output"
                 gs_output_dir.mkdir(parents=True, exist_ok=True)
 
-                # conda 환경에서 Mip-Splatting 실행 - 직접 python 실행
+                # conda 환경에서 Gaussian Splatting 실행 - 직접 python 실행
                 import os
                 conda_python = os.path.expanduser("~/miniconda3/envs/codyssey/bin/python")
-                gs_script = str(Path(__file__).resolve().parent / "mip-splatting" / "train.py")
+                gs_script = str(Path(__file__).resolve().parent / "gaussian-splatting" / "train.py")
 
                 # 환경 변수 설정
                 env = os.environ.copy()
                 torch_lib = os.path.expanduser("~/miniconda3/envs/codyssey/lib/python3.9/site-packages/torch/lib")
                 env["LD_LIBRARY_PATH"] = f"{torch_lib}:{env.get('LD_LIBRARY_PATH', '')}"
-                env["PYTHONPATH"] = str(Path(__file__).resolve().parent / "mip-splatting")
+                env["PYTHONPATH"] = str(Path(__file__).resolve().parent / "gaussian-splatting")
 
                 # Train for 10k iterations only with speed optimizations
                 gs_train_cmd = [
