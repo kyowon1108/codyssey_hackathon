@@ -430,7 +430,10 @@ async def process_job(job_id: str):
 
 # API 엔드포인트 구현
 @app.post("/recon/jobs", summary="새 3D 재구성 작업 생성", description="여러 이미지를 업로드하여 3D 재구성 작업을 생성합니다. 작업 ID와 공개 뷰어 키를 반환합니다.")
-async def create_reconstruction_job(files: list[UploadFile] = File(...)):
+async def create_reconstruction_job(
+    files: list[UploadFile] = File(...),
+    original_resolution: bool = False  # Query parameter: true면 원본 화질 사용
+):
     # 새로운 job 식별자 생성 (UUID4 기반 8문자 또는 timestamp 등)
     job_id = uuid.uuid4().hex[:8]  # 8자리 16진수 ID
 
@@ -446,41 +449,47 @@ async def create_reconstruction_job(files: list[UploadFile] = File(...)):
     (job_dir / "upload" / "images").mkdir(parents=True, exist_ok=True)
     (job_dir / "colmap").mkdir(parents=True, exist_ok=True)
 
-    # 업로드된 이미지들을 저장 및 리사이징 (최대 1600px - GS default)
+    # 업로드된 이미지들을 저장
     from PIL import Image
     import io
-
-    MAX_WIDTH = 1600
-    MAX_HEIGHT = 1600
 
     for file in files:
         content = await file.read()
         img_path = job_dir / "upload" / "images" / file.filename
 
-        # 이미지 리사이징
-        try:
-            img = Image.open(io.BytesIO(content))
-            width, height = img.size
-
-            # 최대 해상도를 넘으면 리사이징
-            if width > MAX_WIDTH or height > MAX_HEIGHT:
-                # 비율 유지하면서 리사이징
-                ratio = min(MAX_WIDTH / width, MAX_HEIGHT / height)
-                new_width = int(width * ratio)
-                new_height = int(height * ratio)
-                img = img.resize((new_width, new_height), Image.LANCZOS)
-
-            # 리사이징된 이미지 저장
-            img.save(img_path, quality=95)
-        except Exception as e:
-            # 이미지 처리 실패 시 원본 저장
+        if original_resolution:
+            # 원본 화질 그대로 저장
             with open(img_path, 'wb') as f:
                 f.write(content)
+        else:
+            # 리사이징 (최대 1600px - GS default)
+            MAX_WIDTH = 1600
+            MAX_HEIGHT = 1600
+
+            try:
+                img = Image.open(io.BytesIO(content))
+                width, height = img.size
+
+                # 최대 해상도를 넘으면 리사이징
+                if width > MAX_WIDTH or height > MAX_HEIGHT:
+                    # 비율 유지하면서 리사이징
+                    ratio = min(MAX_WIDTH / width, MAX_HEIGHT / height)
+                    new_width = int(width * ratio)
+                    new_height = int(height * ratio)
+                    img = img.resize((new_width, new_height), Image.LANCZOS)
+
+                # 리사이징된 이미지 저장
+                img.save(img_path, quality=95)
+            except Exception as e:
+                # 이미지 처리 실패 시 원본 저장
+                with open(img_path, 'wb') as f:
+                    f.write(content)
 
     # 작업 초기 상태 저장
     jobs[job_id] = {
         "status": "PENDING",  # 아직 대기 상태
-        "pub_key": pub_key
+        "pub_key": pub_key,
+        "original_resolution": original_resolution
     }
     pub_to_job[pub_key] = job_id
 
@@ -488,7 +497,11 @@ async def create_reconstruction_job(files: list[UploadFile] = File(...)):
     asyncio.create_task(process_job(job_id))
 
     # 작업 ID와 공개 키 반환
-    return {"job_id": job_id, "pub_key": pub_key}
+    return {
+        "job_id": job_id,
+        "pub_key": pub_key,
+        "original_resolution": original_resolution
+    }
 
 
 @app.get("/recon/jobs/{job_id}/status", summary="작업 상태 조회", description="지정한 job_id에 대한 현재 상태와 로그 일부, 결과 확인 URL 등을 반환합니다.")
@@ -540,7 +553,7 @@ async def view_result_page(pub_key: str, request: Request):
         # 아직 완료되지 않은 경우 대기 메시지 표시
         return HTMLResponse(content="<html><body><h3>Result is not ready yet. Please check again later.</h3></body></html>")
 
-    # Load simple Three.js viewer template
+    # Load Three.js viewer (better cross-browser compatibility)
     viewer_path = Path(__file__).parent / "viewer_template.html"
     with open(viewer_path, 'r') as f:
         html_content = f.read()
@@ -563,12 +576,20 @@ async def download_ply(pub_key: str):
     # Gaussian Splatting 결과 확인 (iteration_10000)
     gs_ply = Path(BASE_DIR / job_id / "gs_output" / "point_cloud" / "iteration_10000" / "point_cloud.ply")
     if gs_ply.exists():
-        return FileResponse(path=gs_ply, filename="cloud.ply", media_type="application/octet-stream")
+        return FileResponse(
+            path=str(gs_ply),
+            media_type="application/octet-stream",
+            filename="cloud.ply"
+        )
 
     # GS 결과가 없으면 COLMAP sparse 결과 사용
     colmap_ply = Path(BASE_DIR / job_id / "export" / "cloud.ply")
     if colmap_ply.exists():
-        return FileResponse(path=colmap_ply, filename="cloud.ply", media_type="application/octet-stream")
+        return FileResponse(
+            path=str(colmap_ply),
+            media_type="application/octet-stream",
+            filename="cloud.ply"
+        )
 
     raise HTTPException(status_code=404, detail="cloud.ply not found")
 
