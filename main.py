@@ -353,27 +353,55 @@ async def process_job(job_id: str):
                     log_file.write(f">> [GPU Memory - After Training] {gpu_mem_after}\n")
                     log_file.flush()
 
-                    # Convert to splat format
+                    # Filter outliers and convert to splat format
                     import subprocess
                     point_cloud_dir = gs_output_dir / "point_cloud"
                     iter_dir = point_cloud_dir / "iteration_10000"
 
                     if iter_dir.exists():
                         ply_file = iter_dir / "point_cloud.ply"
+                        filtered_ply_file = iter_dir / "point_cloud_filtered.ply"
                         splat_file = iter_dir / "scene.splat"
 
-                        if ply_file.exists() and not splat_file.exists():
-                            log_file.write(">> Converting to splat format...\n")
+                        if ply_file.exists():
+                            # Apply outlier filtering
+                            log_file.write(">> Filtering outlier Gaussians...\n")
                             log_file.flush()
-                            convert_cmd = [
-                                "python",
-                                str(Path(__file__).resolve().parent / "convert_to_splat.py"),
+                            filter_cmd = [
+                                conda_python,
+                                str(Path(__file__).resolve().parent / "filter_outliers.py"),
                                 str(ply_file),
-                                str(splat_file)
+                                str(filtered_ply_file),
+                                "20",  # k_neighbors
+                                "2.0"  # std_threshold
                             ]
-                            subprocess.run(convert_cmd, check=True)
-                            log_file.write(">> Conversion complete!\n")
-                            log_file.flush()
+                            try:
+                                result = subprocess.run(filter_cmd, check=True, capture_output=True, text=True)
+                                log_file.write(result.stdout)
+                                log_file.write(">> Outlier filtering complete!\n")
+                                log_file.flush()
+
+                                # Use filtered PLY for splat conversion
+                                ply_for_conversion = filtered_ply_file
+                            except Exception as filter_error:
+                                log_file.write(f"[WARNING] Outlier filtering failed: {str(filter_error)}\n")
+                                log_file.write("Using original PLY file...\n")
+                                log_file.flush()
+                                ply_for_conversion = ply_file
+
+                            # Convert to splat format
+                            if not splat_file.exists():
+                                log_file.write(">> Converting to splat format...\n")
+                                log_file.flush()
+                                convert_cmd = [
+                                    "python",
+                                    str(Path(__file__).resolve().parent / "convert_to_splat.py"),
+                                    str(ply_for_conversion),
+                                    str(splat_file)
+                                ]
+                                subprocess.run(convert_cmd, check=True)
+                                log_file.write(">> Conversion complete!\n")
+                                log_file.flush()
 
                 except Exception as gs_error:
                     log_file.write(f"[WARNING] Gaussian Splatting failed: {str(gs_error)}\n")
