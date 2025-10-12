@@ -140,7 +140,7 @@
         }
 
         // Load splat file
-        fetch('SPLAT_URL_PLACEHOLDER')
+        fetch('{{ splat_url }}')
             .then(response => {
                 if (!response.ok) throw new Error('Failed to load scene');
 
