@@ -24,12 +24,18 @@ class Settings:
     APP_TITLE: str = "Gaussian Splatting 3D Reconstruction API"
     APP_DESCRIPTION: str = "Upload images to reconstruct a 3D model using Gaussian Splatting"
     APP_VERSION: str = "2.0.0"
+    HOST: str = os.getenv("HOST", "0.0.0.0")
+    PORT: int = int(os.getenv("PORT", "3030"))
+    BASE_URL: str = os.getenv("BASE_URL", f"http://localhost:{int(os.getenv('PORT', '3030'))}")
+    DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
 
     # CORS
     CORS_ORIGINS: list = ["*"]
 
     # Processing limits
     MAX_CONCURRENT_JOBS: int = int(os.getenv("MAX_CONCURRENT_JOBS", "2"))
+    MIN_IMAGES: int = int(os.getenv("MIN_IMAGES", "3"))
+    MAX_IMAGES: int = int(os.getenv("MAX_IMAGES", "200"))
     MAX_IMAGE_SIZE: int = int(os.getenv("MAX_IMAGE_SIZE", "1600"))
     MIN_IMAGE_SIZE: int = 100
     ALLOWED_IMAGE_EXTENSIONS: set = {'.jpg', '.jpeg', '.png', '.JPG', '.JPEG', '.PNG'}
