@@ -315,10 +315,11 @@ async def process_job(job_id: str, original_resolution: bool):
 
                 gaussian_count = 0
                 if ply_file.exists():
-                    with open(ply_file, 'r') as f:
+                    with open(ply_file, 'rb') as f:
                         for line in f:
-                            if line.startswith("element vertex"):
-                                gaussian_count = int(line.split()[-1])
+                            line_str = line.decode('utf-8', errors='ignore')
+                            if line_str.startswith("element vertex"):
+                                gaussian_count = int(line_str.split()[-1])
                                 break
 
                 # Update job as completed
