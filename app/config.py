@@ -26,7 +26,7 @@ class Settings:
     APP_VERSION: str = "2.0.0"
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "8000"))
-    BASE_URL: str = os.getenv("BASE_URL", f"http://localhost:{int(os.getenv('PORT', '8000'))}")
+    BASE_URL: str = os.getenv("BASE_URL", "http://kaprpc.iptime.org:5051")
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
 
     # CORS
