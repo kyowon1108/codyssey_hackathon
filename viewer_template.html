@@ -10,7 +10,7 @@
             padding: 0;
             overflow: hidden;
             background-color: #000;
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
         #container {
             width: 100vw;
@@ -18,14 +18,15 @@
         }
         #info {
             position: absolute;
-            top: 10px;
-            left: 10px;
+            top: 15px;
+            left: 15px;
             color: white;
             background: rgba(0, 0, 0, 0.7);
-            padding: 10px;
-            border-radius: 5px;
-            font-size: 14px;
+            padding: 12px 18px;
+            border-radius: 6px;
+            font-size: 13px;
             z-index: 1000;
+            max-width: 280px;
         }
         #progress {
             position: absolute;
@@ -35,27 +36,57 @@
             color: white;
             background: rgba(0, 0, 0, 0.8);
             padding: 20px 40px;
-            border-radius: 10px;
-            font-size: 18px;
+            border-radius: 8px;
+            font-size: 16px;
             z-index: 1000;
+            text-align: center;
+        }
+        #progress-bar {
+            width: 250px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+        #progress-fill {
+            height: 100%;
+            background: #00d4ff;
+            width: 0%;
+            transition: width 0.2s;
+        }
+        .info-line {
+            margin: 5px 0;
+        }
+        .info-label {
+            font-weight: 600;
+            color: #00d4ff;
         }
     </style>
 </head>
 <body>
-    <div id="progress">Loading: 0%</div>
+    <div id="progress">
+        <div>Loading Gaussian Splatting</div>
+        <div id="progress-bar">
+            <div id="progress-fill"></div>
+        </div>
+        <div id="progress-text" style="margin-top: 10px; font-size: 14px;">0%</div>
+    </div>
     <div id="info" style="display: none;">
-        <strong>Gaussian Splatting Viewer</strong><br>
-        Left Mouse: Rotate<br>
-        Right Mouse: Pan<br>
-        Scroll: Zoom
+        <div class="info-line"><span class="info-label">Gaussian Splatting Viewer</span></div>
+        <div class="info-line">Gaussians: <span id="gaussian-count">-</span></div>
+        <div class="info-line">FPS: <span id="fps-counter">-</span></div>
+        <div style="margin-top: 10px; font-size: 11px; color: #aaa;">
+            Controls: Left click to rotate, Right click to pan, Scroll to zoom
+        </div>
     </div>
     <div id="container"></div>
 
     <script type="importmap">
     {
         "imports": {
-            "three": "https://cdn.jsdelivr.net/npm/three@0.167.0/build/three.module.js",
-            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.167.0/examples/jsm/"
+            "three": "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/"
         }
     }
     </script>
@@ -65,8 +96,12 @@
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
         const progressDiv = document.getElementById('progress');
+        const progressFill = document.getElementById('progress-fill');
+        const progressText = document.getElementById('progress-text');
         const infoDiv = document.getElementById('info');
         const container = document.getElementById('container');
+        const gaussianCountSpan = document.getElementById('gaussian-count');
+        const fpsCounterSpan = document.getElementById('fps-counter');
 
         // Scene setup
         const scene = new THREE.Scene();
@@ -89,14 +124,25 @@
         controls.enableDamping = true;
         controls.dampingFactor = 0.05;
 
+        // FPS counter
+        let lastTime = performance.now();
+        let frameCount = 0;
+
+        function updateFPS() {
+            frameCount++;
+            const currentTime = performance.now();
+            if (currentTime >= lastTime + 1000) {
+                const fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+                fpsCounterSpan.textContent = fps;
+                frameCount = 0;
+                lastTime = currentTime;
+            }
+        }
+
         // Load splat file
-        let iterationCount = 'unknown';
         fetch('SPLAT_URL_PLACEHOLDER')
             .then(response => {
                 if (!response.ok) throw new Error('Failed to load scene');
-
-                // Get iteration count from header
-                iterationCount = response.headers.get('X-Iteration') || 'unknown';
 
                 const reader = response.body.getReader();
                 const contentLength = +response.headers.get('Content-Length');
@@ -119,29 +165,31 @@
 
                     if (contentLength) {
                         const percent = Math.round((receivedLength / contentLength) * 100);
-                        progressDiv.textContent = `Loading: ${percent}%`;
+                        progressFill.style.width = `${percent}%`;
+                        progressText.textContent = `${percent}%`;
                     }
 
                     return reader.read().then(processResult);
                 });
             })
             .then(data => {
-                progressDiv.textContent = 'Processing...';
+                progressText.textContent = 'Processing...';
                 return parseSplatData(data);
             })
             .then(splatData => {
                 createSplatMesh(splatData);
                 progressDiv.style.display = 'none';
                 infoDiv.style.display = 'block';
+                gaussianCountSpan.textContent = splatData.count.toLocaleString();
             })
             .catch(error => {
-                progressDiv.textContent = `Error: ${error.message}`;
+                progressDiv.innerHTML = `<div style="color: #ff5555;">Error loading scene</div><div style="font-size: 13px; margin-top: 10px;">${error.message}</div>`;
                 console.error('Error loading splat:', error);
             });
 
         function parseSplatData(data) {
-            const view = new DataView(data.buffer);
-            const vertexCount = data.length / 44; // Each splat is 44 bytes
+            const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+            const vertexCount = Math.floor(data.length / 44);
 
             const positions = new Float32Array(vertexCount * 3);
             const colors = new Float32Array(vertexCount * 3);
@@ -149,14 +197,12 @@
             for (let i = 0; i < vertexCount; i++) {
                 const offset = i * 44;
 
-                // Position (3 floats)
+                // Position
                 positions[i * 3] = view.getFloat32(offset, true);
                 positions[i * 3 + 1] = view.getFloat32(offset + 4, true);
                 positions[i * 3 + 2] = view.getFloat32(offset + 8, true);
 
-                // Skip scale (3 floats = 12 bytes)
-
-                // Color (4 bytes: R, G, B, opacity)
+                // Color
                 colors[i * 3] = view.getUint8(offset + 24) / 255;
                 colors[i * 3 + 1] = view.getUint8(offset + 25) / 255;
                 colors[i * 3 + 2] = view.getUint8(offset + 26) / 255;
@@ -169,10 +215,9 @@
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.BufferAttribute(splatData.positions, 3));
             geometry.setAttribute('color', new THREE.BufferAttribute(splatData.colors, 3));
-            geometry.computeBoundingSphere();
 
             const material = new THREE.PointsMaterial({
-                size: 0.025,
+                size: 0.02,
                 vertexColors: true,
                 sizeAttenuation: true
             });
@@ -181,27 +226,22 @@
             scene.add(points);
 
             // Center camera
+            geometry.computeBoundingSphere();
             if (geometry.boundingSphere) {
                 const center = geometry.boundingSphere.center;
                 const radius = geometry.boundingSphere.radius;
-                camera.position.set(center.x, center.y, center.z + radius * 2);
+                camera.position.set(center.x, center.y, center.z + radius * 2.5);
                 camera.lookAt(center);
                 controls.target.copy(center);
                 controls.update();
             }
-
-            infoDiv.innerHTML = `<strong>Gaussian Splatting Viewer</strong><br>
-                Iteration: ${iterationCount.toLocaleString()}<br>
-                Gaussians: ${splatData.count.toLocaleString()}<br>
-                Left Mouse: Rotate<br>
-                Right Mouse: Pan<br>
-                Scroll: Zoom`;
         }
 
         // Animation loop
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
+            updateFPS();
             renderer.render(scene, camera);
         }
         animate();

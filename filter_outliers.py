@@ -142,19 +142,37 @@ def filter_outliers(ply_path, output_path, k_neighbors=20, std_threshold=2.0,
     return final_count, total_removed
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python filter_outliers.py <input.ply> <output.ply> [k_neighbors] [std_threshold]")
-        print("  k_neighbors: Number of neighbors to consider (default: 20)")
-        print("  std_threshold: Std dev threshold for outliers (default: 2.0)")
-        sys.exit(1)
-    
-    input_ply = Path(sys.argv[1])
-    output_ply = Path(sys.argv[2])
-    k_neighbors = int(sys.argv[3]) if len(sys.argv) > 3 else 20
-    std_threshold = float(sys.argv[4]) if len(sys.argv) > 4 else 2.0
-    
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Filter outlier Gaussians from PLY file')
+    parser.add_argument('input_ply', type=str, help='Input PLY file path')
+    parser.add_argument('output_ply', type=str, help='Output filtered PLY file path')
+    parser.add_argument('--k_neighbors', type=int, default=20,
+                       help='Number of neighbors to consider (default: 20)')
+    parser.add_argument('--std_threshold', type=float, default=2.0,
+                       help='Std dev threshold for outliers (default: 2.0)')
+    parser.add_argument('--remove_small_clusters', action='store_true', default=False,
+                       help='Remove small isolated clusters')
+    parser.add_argument('--min_cluster_ratio', type=float, default=0.01,
+                       help='Minimum cluster size as ratio (default: 0.01)')
+    parser.add_argument('--cluster_eps', type=float, default=None,
+                       help='DBSCAN eps parameter (auto if not specified)')
+
+    args = parser.parse_args()
+
+    input_ply = Path(args.input_ply)
+    output_ply = Path(args.output_ply)
+
     if not input_ply.exists():
         print(f"Error: Input file not found: {input_ply}")
         sys.exit(1)
-    
-    filter_outliers(input_ply, output_ply, k_neighbors, std_threshold)
+
+    filter_outliers(
+        input_ply,
+        output_ply,
+        k_neighbors=args.k_neighbors,
+        std_threshold=args.std_threshold,
+        remove_small_clusters=args.remove_small_clusters,
+        min_cluster_ratio=args.min_cluster_ratio,
+        cluster_eps=args.cluster_eps
+    )

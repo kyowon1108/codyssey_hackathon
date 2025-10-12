@@ -245,6 +245,7 @@ async def process_job(job_id: str):
                     "--database_path", str(database_path),
                     "--image_path", str(images_path),
                     "--ImageReader.camera_model", "OPENCV",  # 기본 카메라 모델 (OPENCV 핀홀)
+                    "--SiftExtraction.max_num_features", "16384",  # 이미지당 최대 특징점 수 증가 (기본값: 8192)
                     "--FeatureExtraction.num_threads", "8"
                 ], log_file)
 
@@ -365,29 +366,26 @@ async def process_job(job_id: str):
 
                         if ply_file.exists():
                             # Apply outlier filtering
-                            log_file.write(">> Filtering outlier Gaussians...\n")
-                            log_file.flush()
-                            filter_cmd = [
-                                conda_python,
-                                str(Path(__file__).resolve().parent / "filter_outliers.py"),
-                                str(ply_file),
-                                str(filtered_ply_file),
-                                "20",  # k_neighbors
-                                "2.0"  # std_threshold
-                            ]
-                            try:
-                                result = subprocess.run(filter_cmd, check=True, capture_output=True, text=True)
+                            if not filtered_ply_file.exists():
+                                log_file.write(">> Applying outlier filtering...\n")
+                                log_file.flush()
+                                filter_cmd = [
+                                    conda_python,
+                                    str(Path(__file__).resolve().parent / "filter_outliers.py"),
+                                    str(ply_file),
+                                    str(filtered_ply_file),
+                                    "--k_neighbors", "20",
+                                    "--std_threshold", "2.0",
+                                    "--remove_small_clusters",
+                                    "--min_cluster_ratio", "0.01"
+                                ]
+                                result = subprocess.run(filter_cmd, capture_output=True, text=True)
                                 log_file.write(result.stdout)
-                                log_file.write(">> Outlier filtering complete!\n")
+                                log_file.write(result.stderr)
                                 log_file.flush()
 
-                                # Use filtered PLY for splat conversion
-                                ply_for_conversion = filtered_ply_file
-                            except Exception as filter_error:
-                                log_file.write(f"[WARNING] Outlier filtering failed: {str(filter_error)}\n")
-                                log_file.write("Using original PLY file...\n")
-                                log_file.flush()
-                                ply_for_conversion = ply_file
+                            # Use filtered PLY for splat conversion
+                            ply_for_conversion = filtered_ply_file if filtered_ply_file.exists() else ply_file
 
                             # Convert to splat format
                             if not splat_file.exists():
