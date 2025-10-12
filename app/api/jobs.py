@@ -177,11 +177,19 @@ async def get_point_cloud(pub_key: str):
         if job.status != "COMPLETED":
             raise HTTPException(400, "Job not completed yet")
 
+        # Try new structure first
         ply_file = settings.DATA_DIR / job.job_id / "output" / "point_cloud" / f"iteration_{settings.TRAINING_ITERATIONS}" / "point_cloud_filtered.ply"
 
         if not ply_file.exists():
-            # Fallback to unfiltered
+            # Fallback to unfiltered (new structure)
             ply_file = settings.DATA_DIR / job.job_id / "output" / "point_cloud" / f"iteration_{settings.TRAINING_ITERATIONS}" / "point_cloud.ply"
+
+        # Try old structure (gs_output)
+        if not ply_file.exists():
+            ply_file = settings.DATA_DIR / job.job_id / "gs_output" / "point_cloud" / f"iteration_{settings.TRAINING_ITERATIONS}" / "point_cloud_filtered.ply"
+
+        if not ply_file.exists():
+            ply_file = settings.DATA_DIR / job.job_id / "gs_output" / "point_cloud" / f"iteration_{settings.TRAINING_ITERATIONS}" / "point_cloud.ply"
 
         if not ply_file.exists():
             raise HTTPException(404, "Point cloud file not found")
@@ -215,7 +223,12 @@ async def get_splat_file(pub_key: str):
         if job.status != "COMPLETED":
             raise HTTPException(400, "Job not completed yet")
 
+        # Try new structure first
         splat_file = settings.DATA_DIR / job.job_id / "output" / "point_cloud" / f"iteration_{settings.TRAINING_ITERATIONS}" / "scene.splat"
+
+        # Try old structure (gs_output)
+        if not splat_file.exists():
+            splat_file = settings.DATA_DIR / job.job_id / "gs_output" / "point_cloud" / f"iteration_{settings.TRAINING_ITERATIONS}" / "scene.splat"
 
         if not splat_file.exists():
             raise HTTPException(404, "Splat file not found")
