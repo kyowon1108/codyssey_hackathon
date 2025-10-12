@@ -4,6 +4,12 @@ gaussian-splatting/
 # Data directory (job outputs)
 data/
 
+# Logs directory
+logs/
+*.log
+server.log
+nohup.out
+
 # Python virtual environment
 venv/
 __pycache__/
@@ -11,11 +17,9 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
-
-# Logs
-*.log
-server.log
-nohup.out
+*.egg-info/
+dist/
+build/
 
 # IDE
 .vscode/

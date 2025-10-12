@@ -2,31 +2,11 @@ import os
 import uuid
 import random
 import asyncio
-import traceback
-import logging
 from pathlib import Path
-from datetime import datetime
-from typing import Optional
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Depends
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
-
-# Import database models and functions
-from database import (
-    init_db, get_db, Job,
-    create_job, get_job_by_id, get_job_by_pub_key,
-    update_job_status, update_job_results, log_error,
-    get_running_jobs, increment_retry_count
-)
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 # FastAPI 앱 생성
 app = FastAPI(
