@@ -25,8 +25,8 @@ class Settings:
     APP_DESCRIPTION: str = "Upload images to reconstruct a 3D model using Gaussian Splatting"
     APP_VERSION: str = "2.0.0"
     HOST: str = os.getenv("HOST", "0.0.0.0")
-    PORT: int = int(os.getenv("PORT", "3030"))
-    BASE_URL: str = os.getenv("BASE_URL", f"http://localhost:{int(os.getenv('PORT', '3030'))}")
+    PORT: int = int(os.getenv("PORT", "8000"))
+    BASE_URL: str = os.getenv("BASE_URL", f"http://localhost:{int(os.getenv('PORT', '8000'))}")
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
 
     # CORS
