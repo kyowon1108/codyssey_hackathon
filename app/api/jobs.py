@@ -325,7 +325,7 @@ async def get_splat_file(pub_key: str):
 
 async def process_job(job_id: str, original_resolution: bool):
     """
-    Background job processing pipeline
+    Background job processing pipeline with step tracking
 
     Args:
         job_id: Job identifier
@@ -341,6 +341,7 @@ async def process_job(job_id: str, original_resolution: bool):
         try:
             # Update status to PROCESSING
             crud.update_job_status(db, job_id, "PROCESSING")
+            crud.update_job_step(db, job_id, "PREFLIGHT", 5)
             db.commit()
 
             with open(log_file_path, 'w') as log_file:
@@ -351,23 +352,31 @@ async def process_job(job_id: str, original_resolution: bool):
                 colmap = COLMAPPipeline(job_dir)
 
                 # Step 1: Feature extraction
-                log_file.write(">> [COLMAP] Extracting features...\n")
+                crud.update_job_step(db, job_id, "COLMAP_FEAT", 15)
+                db.commit()
+                log_file.write(">> [COLMAP_FEAT] Extracting features...\n")
                 log_file.flush()
                 colmap.database_path.parent.mkdir(parents=True, exist_ok=True)
                 await colmap.extract_features(log_file)
 
                 # Step 2: Feature matching
-                log_file.write(">> [COLMAP] Matching features...\n")
+                crud.update_job_step(db, job_id, "COLMAP_MATCH", 30)
+                db.commit()
+                log_file.write(">> [COLMAP_MATCH] Matching features...\n")
                 log_file.flush()
                 await colmap.match_features(log_file)
 
                 # Step 3: Sparse reconstruction
-                log_file.write(">> [COLMAP] Reconstructing sparse model...\n")
+                crud.update_job_step(db, job_id, "COLMAP_MAP", 45)
+                db.commit()
+                log_file.write(">> [COLMAP_MAP] Reconstructing sparse model...\n")
                 log_file.flush()
                 model_path = await colmap.reconstruct(log_file)
 
                 # Step 4: Undistort images
-                log_file.write(">> [COLMAP] Undistorting images...\n")
+                crud.update_job_step(db, job_id, "COLMAP_UNDIST", 55)
+                db.commit()
+                log_file.write(">> [COLMAP_UNDIST] Undistorting images...\n")
                 log_file.flush()
                 work_dir = await colmap.undistort_images(model_path, log_file)
 
@@ -377,7 +386,9 @@ async def process_job(job_id: str, original_resolution: bool):
                 await colmap.convert_to_text(work_dir / "sparse" / "0", log_file)
 
                 # Step 6: Gaussian Splatting training
-                log_file.write(">> [GS] Starting Gaussian Splatting training...\n")
+                crud.update_job_step(db, job_id, "GS_TRAIN", 65)
+                db.commit()
+                log_file.write(">> [GS_TRAIN] Starting Gaussian Splatting training...\n")
                 log_file.flush()
 
                 output_dir = job_dir / "output"
@@ -385,7 +396,9 @@ async def process_job(job_id: str, original_resolution: bool):
                 iteration_dir = await gs_trainer.train(log_file)
 
                 # Step 7: Post-processing
-                log_file.write(">> [GS] Post-processing results...\n")
+                crud.update_job_step(db, job_id, "EXPORT_PLY", 90)
+                db.commit()
+                log_file.write(">> [EXPORT_PLY] Post-processing results...\n")
                 log_file.flush()
                 gs_trainer.post_process(iteration_dir, log_file)
 
@@ -405,6 +418,7 @@ async def process_job(job_id: str, original_resolution: bool):
 
                 # Update job as completed
                 crud.update_job_status(db, job_id, "COMPLETED")
+                crud.update_job_step(db, job_id, "DONE", 100)
                 crud.update_job_results(db, job_id, gaussian_count=gaussian_count)
                 db.commit()
 
@@ -426,6 +440,7 @@ async def process_job(job_id: str, original_resolution: bool):
                 db, job_id, "FAILED",
                 error_message=str(e)
             )
+            crud.update_job_step(db, job_id, "ERROR", 0)
             db.commit()
 
             # Write to log file
