@@ -103,8 +103,8 @@ def check_cuda_torch(result: PreflightResult):
             result.add_check(
                 "CUDA/Torch",
                 False,
-                "CUDA not available (경고만, 계속 진행 가능)",
-                critical=False  # 경고만, 치명적 오류 아님
+                "CUDA not available (required for training)",
+                critical=True  # 치명적 오류: 훈련 불가능
             )
     except ImportError:
         result.add_check(
