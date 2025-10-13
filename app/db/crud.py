@@ -126,7 +126,12 @@ def get_all_jobs(db: Session, skip: int = 0, limit: int = 100) -> List[Job]:
 
 def get_running_jobs(db: Session) -> List[Job]:
     """Get all running jobs"""
-    return db.query(Job).filter(Job.status == "RUNNING").all()
+    return db.query(Job).filter(Job.status == "PROCESSING").all()
+
+
+def get_pending_jobs(db: Session) -> List[Job]:
+    """Get all pending jobs ordered by creation time"""
+    return db.query(Job).filter(Job.status == "PENDING").order_by(Job.created_at.asc()).all()
 
 
 def delete_job(db: Session, job_id: str) -> bool:

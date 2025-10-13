@@ -129,13 +129,39 @@ async def get_job_status(job_id: str):
         if not job:
             raise HTTPException(404, "Job not found")
 
-        # Read last 50 lines of log
-        log_file = settings.DATA_DIR / job_id / "logs" / "process.log"
-        log_tail = []
-        if log_file.exists():
-            with open(log_file, 'r') as f:
-                lines = f.readlines()
-                log_tail = [line.rstrip() for line in lines[-50:]]
+        # Calculate queue position if PENDING
+        queue_position = None
+        if job.status == "PENDING":
+            # Count how many jobs are ahead in the queue
+            pending_jobs = crud.get_pending_jobs(db)
+            for idx, pending_job in enumerate(pending_jobs):
+                if pending_job.job_id == job_id:
+                    queue_position = idx + 1
+                    break
+
+            # Count currently running jobs
+            running_count = len(crud.get_running_jobs(db))
+
+            # Add queue info to log
+            if queue_position:
+                if queue_position == 1 and running_count < settings.MAX_CONCURRENT_JOBS:
+                    log_tail = [f">> [QUEUE] Job is next in queue. Starting soon..."]
+                else:
+                    log_tail = [
+                        f">> [QUEUE] Position in queue: {queue_position}",
+                        f">> [QUEUE] Currently running: {running_count}/{settings.MAX_CONCURRENT_JOBS} jobs",
+                        f">> [QUEUE] Waiting for processing slot..."
+                    ]
+            else:
+                log_tail = []
+        else:
+            # Read last 50 lines of log
+            log_file = settings.DATA_DIR / job_id / "logs" / "process.log"
+            log_tail = []
+            if log_file.exists():
+                with open(log_file, 'r') as f:
+                    lines = f.readlines()
+                    log_tail = [line.rstrip() for line in lines[-50:]]
 
         # Build viewer URL if completed
         viewer_url = None
@@ -148,11 +174,50 @@ async def get_job_status(job_id: str):
             log_tail=log_tail,
             gaussian_count=job.gaussian_count,
             viewer_url=viewer_url,
-            error_message=job.error_message,
-            created_at=job.created_at,
-            started_at=job.started_at,
-            completed_at=job.completed_at
+            error=job.error_message,
+            created_at=job.created_at.isoformat() if job.created_at else None,
+            started_at=job.started_at.isoformat() if job.started_at else None,
+            completed_at=job.completed_at.isoformat() if job.completed_at else None,
+            queue_position=queue_position
         )
+    finally:
+        db.close()
+
+
+@router.get("/queue")
+async def get_queue_status():
+    """
+    Get current queue status
+
+    Returns:
+        Queue information including running and pending jobs
+    """
+    db = SessionLocal()
+    try:
+        running_jobs = crud.get_running_jobs(db)
+        pending_jobs = crud.get_pending_jobs(db)
+
+        return {
+            "max_concurrent": settings.MAX_CONCURRENT_JOBS,
+            "running_count": len(running_jobs),
+            "pending_count": len(pending_jobs),
+            "running_jobs": [
+                {
+                    "job_id": job.job_id,
+                    "created_at": job.created_at.isoformat() if job.created_at else None,
+                    "started_at": job.started_at.isoformat() if job.started_at else None
+                }
+                for job in running_jobs
+            ],
+            "pending_jobs": [
+                {
+                    "job_id": job.job_id,
+                    "position": idx + 1,
+                    "created_at": job.created_at.isoformat() if job.created_at else None
+                }
+                for idx, job in enumerate(pending_jobs)
+            ]
+        }
     finally:
         db.close()
 
@@ -323,10 +388,8 @@ async def process_job(job_id: str, original_resolution: bool):
                                 break
 
                 # Update job as completed
-                crud.update_job_status(
-                    db, job_id, "COMPLETED",
-                    gaussian_count=gaussian_count
-                )
+                crud.update_job_status(db, job_id, "COMPLETED")
+                crud.update_job_results(db, job_id, gaussian_count=gaussian_count)
                 db.commit()
 
                 log_file.write(f">> [SUCCESS] Job completed! Generated {gaussian_count} Gaussians\n")

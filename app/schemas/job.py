@@ -32,6 +32,7 @@ class JobStatusResponse(BaseModel):
     viewer_url: Optional[str] = None
     error: Optional[str] = None
     error_stage: Optional[str] = None
+    queue_position: Optional[int] = None
 
 
 class JobListResponse(BaseModel):

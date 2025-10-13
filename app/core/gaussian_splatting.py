@@ -8,6 +8,8 @@ from app.config import settings
 from app.core.pipeline import run_command
 from app.utils.system import get_gpu_memory_usage
 from app.utils.logger import setup_logger
+from app.utils.outlier_filter import filter_outliers
+from app.utils.converter import convert_ply_to_splat
 
 logger = setup_logger(__name__)
 
@@ -89,19 +91,19 @@ class GaussianSplattingTrainer:
             log_file.write(">> Applying outlier filtering...\n")
             log_file.flush()
 
-            filter_cmd = [
-                str(settings.CONDA_PYTHON),
-                str(settings.BASE_DIR / "filter_outliers.py"),
-                str(ply_file),
-                str(filtered_ply),
-                "--k_neighbors", str(settings.OUTLIER_K_NEIGHBORS),
-                "--std_threshold", str(settings.OUTLIER_STD_THRESHOLD),
-                "--remove_small_clusters",
-                "--min_cluster_ratio", str(settings.OUTLIER_MIN_CLUSTER_RATIO)
-            ]
-            result = subprocess.run(filter_cmd, capture_output=True, text=True)
-            log_file.write(result.stdout)
-            log_file.write(result.stderr)
+            try:
+                filter_outliers(
+                    ply_file,
+                    filtered_ply,
+                    k_neighbors=settings.OUTLIER_K_NEIGHBORS,
+                    std_threshold=settings.OUTLIER_STD_THRESHOLD,
+                    remove_small_clusters=settings.OUTLIER_REMOVE_SMALL_CLUSTERS,
+                    min_cluster_ratio=settings.OUTLIER_MIN_CLUSTER_RATIO
+                )
+                log_file.write(">> Outlier filtering complete!\n")
+            except Exception as e:
+                logger.error(f"Outlier filtering failed: {e}")
+                log_file.write(f">> Warning: Outlier filtering failed: {e}\n")
             log_file.flush()
 
         # Convert to splat
@@ -110,12 +112,10 @@ class GaussianSplattingTrainer:
             log_file.write(">> Converting to splat format...\n")
             log_file.flush()
 
-            convert_cmd = [
-                "python",
-                str(settings.BASE_DIR / "convert_to_splat.py"),
-                str(ply_for_conversion),
-                str(splat_file)
-            ]
-            subprocess.run(convert_cmd, check=True)
-            log_file.write(">> Conversion complete!\n")
+            try:
+                convert_ply_to_splat(ply_for_conversion, splat_file)
+                log_file.write(">> Conversion complete!\n")
+            except Exception as e:
+                logger.error(f"Splat conversion failed: {e}")
+                log_file.write(f">> Warning: Splat conversion failed: {e}\n")
             log_file.flush()

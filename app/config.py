@@ -33,7 +33,7 @@ class Settings:
     CORS_ORIGINS: list = ["*"]
 
     # Processing limits
-    MAX_CONCURRENT_JOBS: int = int(os.getenv("MAX_CONCURRENT_JOBS", "2"))
+    MAX_CONCURRENT_JOBS: int = int(os.getenv("MAX_CONCURRENT_JOBS", "1"))
     MIN_IMAGES: int = int(os.getenv("MIN_IMAGES", "3"))
     MAX_IMAGES: int = int(os.getenv("MAX_IMAGES", "200"))
     MAX_IMAGE_SIZE: int = int(os.getenv("MAX_IMAGE_SIZE", "1600"))
