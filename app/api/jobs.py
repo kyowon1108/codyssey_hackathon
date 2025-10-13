@@ -348,6 +348,22 @@ async def process_job(job_id: str, original_resolution: bool):
                 log_file.write(f">> [Job {job_id}] Starting reconstruction pipeline\n")
                 log_file.flush()
 
+                # Run preflight check
+                from app.utils.preflight import run_preflight_check
+
+                log_file.write(">> [PREFLIGHT] Running environment checks...\n")
+                log_file.flush()
+
+                preflight_result = run_preflight_check()
+                log_file.write(preflight_result.get_summary() + "\n")
+                log_file.flush()
+
+                if preflight_result.is_fatal():
+                    raise RuntimeError(f"Preflight check failed: {', '.join(preflight_result.errors)}")
+
+                log_file.write(">> [PREFLIGHT] All checks passed, proceeding...\n")
+                log_file.flush()
+
                 # Initialize COLMAP pipeline
                 colmap = COLMAPPipeline(job_dir)
 
