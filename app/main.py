@@ -79,15 +79,14 @@ async def root():
     }
 
 
-@app.get("/health")
-async def health():
-    """Health check endpoint"""
-    return {"status": "healthy"}
-
-
 @app.get("/healthz")
 async def healthz():
-    """Health check endpoint (IMPLEMENT.md 요구사항)"""
+    """
+    Kubernetes-style health check endpoint
+
+    Returns simple "ok" text for minimal overhead.
+    Used by container orchestration systems (k8s, Docker) for liveness/readiness probes.
+    """
     return "ok"
 
 

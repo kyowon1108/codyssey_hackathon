@@ -37,6 +37,11 @@ class Job(Base):
     removed_count = Column(Integer, nullable=True)
     file_size_mb = Column(Float, nullable=True)
 
+    # Evaluation metrics (PSNR, SSIM, LPIPS)
+    psnr = Column(Float, nullable=True)
+    ssim = Column(Float, nullable=True)
+    lpips = Column(Float, nullable=True)
+
     # Error tracking
     error_message = Column(Text, nullable=True)
     error_stage = Column(String(50), nullable=True)
@@ -65,6 +70,9 @@ class Job(Base):
             "filtered_count": self.filtered_count,
             "removed_count": self.removed_count,
             "file_size_mb": self.file_size_mb,
+            "psnr": self.psnr,
+            "ssim": self.ssim,
+            "lpips": self.lpips,
             "error_message": self.error_message,
             "error_stage": self.error_stage,
             "retry_count": self.retry_count,

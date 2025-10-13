@@ -47,7 +47,10 @@ async def view_result(request: Request, pub_key: str):
                 "request": request,
                 "pub_key": pub_key,
                 "splat_url": splat_url,
-                "gaussian_count": job.gaussian_count or 0
+                "gaussian_count": job.gaussian_count or 0,
+                "psnr": job.psnr,
+                "ssim": job.ssim,
+                "lpips": job.lpips
             }
         )
     finally:

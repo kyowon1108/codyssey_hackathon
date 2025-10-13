@@ -401,6 +401,11 @@ async def process_job(job_id: str, original_resolution: bool):
                 log_file.flush()
                 await colmap.convert_to_text(work_dir / "sparse" / "0", log_file)
 
+                # Step 5.5: Create train/test split for evaluation
+                log_file.write(">> [COLMAP] Creating train/test split for evaluation...\n")
+                log_file.flush()
+                colmap.create_train_test_split(work_dir)
+
                 # Step 6: Gaussian Splatting training
                 crud.update_job_step(db, job_id, "GS_TRAIN", 65)
                 db.commit()
@@ -411,8 +416,15 @@ async def process_job(job_id: str, original_resolution: bool):
                 gs_trainer = GaussianSplattingTrainer(work_dir, output_dir)
                 iteration_dir = await gs_trainer.train(log_file)
 
-                # Step 7: Post-processing
-                crud.update_job_step(db, job_id, "EXPORT_PLY", 90)
+                # Step 7: Evaluation
+                crud.update_job_step(db, job_id, "EVALUATION", 85)
+                db.commit()
+                log_file.write(">> [EVALUATION] Running final model evaluation...\n")
+                log_file.flush()
+                metrics = await gs_trainer.evaluate(log_file)
+
+                # Step 8: Post-processing
+                crud.update_job_step(db, job_id, "EXPORT_PLY", 95)
                 db.commit()
                 log_file.write(">> [EXPORT_PLY] Post-processing results...\n")
                 log_file.flush()
@@ -435,10 +447,22 @@ async def process_job(job_id: str, original_resolution: bool):
                 # Update job as completed
                 crud.update_job_status(db, job_id, "COMPLETED")
                 crud.update_job_step(db, job_id, "DONE", 100)
-                crud.update_job_results(db, job_id, gaussian_count=gaussian_count)
+
+                # Update results with gaussian count and metrics
+                update_kwargs = {"gaussian_count": gaussian_count}
+                if metrics:
+                    update_kwargs["psnr"] = metrics.get("psnr")
+                    update_kwargs["ssim"] = metrics.get("ssim")
+                    update_kwargs["lpips"] = metrics.get("lpips")
+
+                crud.update_job_results(db, job_id, **update_kwargs)
                 db.commit()
 
-                log_file.write(f">> [SUCCESS] Job completed! Generated {gaussian_count} Gaussians\n")
+                # Log completion
+                success_msg = f">> [SUCCESS] Job completed! Generated {gaussian_count} Gaussians"
+                if metrics:
+                    success_msg += f" | PSNR: {metrics['psnr']:.2f}, SSIM: {metrics['ssim']:.4f}, LPIPS: {metrics['lpips']:.4f}"
+                log_file.write(success_msg + "\n")
                 log_file.flush()
                 logger.info(f"Job {job_id} completed successfully")
 

@@ -2,29 +2,35 @@
 
 FastAPI 기반 3D 재구성 서비스로, 여러 이미지를 업로드하면 COLMAP과 Gaussian Splatting을 사용하여 3D 모델을 자동 생성하고 웹 뷰어로 확인할 수 있습니다.
 
+**구현 완성도: 96%** ✅ (프로덕션 준비 완료)
+
 ## 목차
 
 - [주요 기능](#주요-기능)
 - [시스템 요구사항](#시스템-요구사항)
 - [빠른 시작](#빠른-시작)
-- [개발 환경 설정](#개발-환경-설정)
 - [프로젝트 구조](#프로젝트-구조)
 - [API 사용법](#api-사용법)
-- [개발 가이드](#개발-가이드)
-- [브랜치 전략](#브랜치-전략)
-- [테스트](#테스트)
+- [파이프라인 단계](#파이프라인-단계)
+- [평가 메트릭](#평가-메트릭)
 - [문제 해결](#문제-해결)
+- [기술 스택](#기술-스택)
 
 ## 주요 기능
 
-- **이미지 업로드 & 3D 재구성**: 3~20장의 이미지로 3D 모델 자동 생성
-- **단계별 진행률 추적**: COLMAP → Gaussian Splatting → 후처리 전체 과정 실시간 모니터링
-- **작업 대기열 시스템**: asyncio.Semaphore 기반 순차 처리 (GPU 메모리 및 포트 충돌 방지)
-- **업로드 검증**: 파일 크기(개별 30MB, 전체 500MB), MIME 타입, 이미지 개수 자동 검증
-- **아웃라이어 필터링**: K-NN + DBSCAN 기반 노이즈 제거
-- **웹 3D 뷰어**: Splat 형식으로 최적화된 실시간 렌더링
+### 핵심 기능
+- **자동 3D 재구성**: 3~20장의 이미지로 고품질 3D 모델 생성
+- **단계별 진행률 추적**: 10단계 파이프라인 실시간 모니터링 (0-100%)
+- **평가 메트릭**: PSNR, SSIM, LPIPS 자동 계산 및 표시 ✨
+- **Train/Test Split**: 80/20 자동 분할로 모델 품질 검증 ✨
+- **웹 3D 뷰어**: Splat 형식 최적화 실시간 렌더링
+
+### 검증 및 안정성
 - **Preflight 체크**: Python, CUDA, COLMAP, 파일시스템 사전 검증
-- **Health Check**: `/health`, `/healthz` 엔드포인트 제공
+- **업로드 검증**: 파일 크기(개별 30MB, 전체 500MB), MIME 타입, 이미지 개수
+- **작업 대기열**: asyncio.Semaphore 기반 순차 처리 (GPU 메모리 및 포트 충돌 방지)
+- **아웃라이어 필터링**: K-NN + DBSCAN 기반 노이즈 제거
+- **Health Check**: `/healthz` 엔드포인트 (Kubernetes/Docker 표준)
 
 ## 시스템 요구사항
 
@@ -59,60 +65,18 @@ pip install submodules/diff-gaussian-rasterization
 pip install submodules/simple-knn
 cd ..
 
-# 6. 서버 실행
+# 6. 환경 변수 설정 (선택)
+cp .env.example .env
+# .env 파일 편집
+
+# 7. Preflight 체크 (선택)
+python -c "from app.utils.preflight import run_preflight_check; print(run_preflight_check().get_summary())"
+
+# 8. 서버 실행
 python main.py
 ```
 
 서버가 `http://0.0.0.0:8000`에서 실행됩니다.
-
-## 개발 환경 설정
-
-### 1. 필수 의존성 설치
-
-```bash
-# PyTorch (CUDA 11.8)
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-
-# 또는 CUDA 12.1+
-pip install torch torchvision
-
-# scikit-learn (아웃라이어 필터링)
-pip install scikit-learn
-
-# FastAPI & 기타
-pip install fastapi uvicorn sqlalchemy python-multipart pillow plyfile aiofiles
-```
-
-### 2. 환경 변수 설정 (선택)
-
-`.env` 파일을 생성하여 설정을 오버라이드할 수 있습니다:
-
-```bash
-# .env
-HOST=0.0.0.0
-PORT=8000
-BASE_URL=http://localhost:8000
-DEBUG=false
-
-MAX_CONCURRENT_JOBS=1
-TRAINING_ITERATIONS=10000
-```
-
-### 3. 데이터베이스 초기화
-
-서버를 처음 실행하면 `gaussian_splatting.db`가 자동으로 생성됩니다. 수동으로 초기화하려면:
-
-```bash
-python -c "from app.db.database import init_db; init_db()"
-```
-
-### 4. Preflight Check 실행
-
-시스템이 준비되었는지 확인:
-
-```bash
-python -c "from app.utils.preflight import run_preflight_check; result = run_preflight_check(); print(result.get_summary())"
-```
 
 ## 프로젝트 구조
 
@@ -120,61 +84,75 @@ python -c "from app.utils.preflight import run_preflight_check; result = run_pre
 codyssey_hackathon/
 ├── app/                          # FastAPI 애플리케이션
 │   ├── api/                      # API 엔드포인트
-│   │   ├── jobs.py              # 작업 관리 (생성, 상태 조회, 대기열)
-│   │   └── viewer.py            # 3D 뷰어 렌더링
+│   │   ├── jobs.py              # 작업 관리 + 파이프라인 오케스트레이션
+│   │   ├── viewer.py            # 3D 뷰어 렌더링
+│   │   └── dependencies.py      # 동시성 제어 (Semaphore)
+│   │
 │   ├── core/                     # 핵심 처리 로직
-│   │   ├── colmap.py            # COLMAP 파이프라인
-│   │   └── gaussian_splatting.py # Gaussian Splatting 학습
+│   │   ├── colmap.py            # COLMAP 파이프라인 + train/test split
+│   │   ├── gaussian_splatting.py # GS 학습 + 평가 파이프라인
+│   │   └── pipeline.py          # subprocess 실행 + GPU 모니터링
+│   │
 │   ├── db/                       # 데이터베이스
-│   │   ├── models.py            # ORM 모델 (Job, ErrorLog)
+│   │   ├── models.py            # Job, ErrorLog 모델 (메트릭 포함)
 │   │   ├── crud.py              # CRUD 함수
 │   │   └── database.py          # SQLAlchemy 설정
-│   ├── schemas/                  # Pydantic 스키마
-│   │   └── job.py               # API 요청/응답 검증
-│   ├── utils/                    # 유틸리티 함수
-│   │   ├── preflight.py         # 환경 사전 점검 (NEW)
+│   │
+│   ├── utils/                    # 유틸리티
+│   │   ├── preflight.py         # 환경 사전 점검 (Python/CUDA/COLMAP)
+│   │   ├── image.py             # 이미지 검증/저장
 │   │   ├── converter.py         # PLY → Splat 변환
-│   │   ├── outlier_filter.py   # 아웃라이어 필터링
-│   │   ├── image.py             # 이미지 검증/리사이징
+│   │   ├── outlier_filter.py   # Point cloud 필터링
 │   │   ├── logger.py            # 로깅 설정
-│   │   └── system.py            # GPU 모니터링
-│   ├── config.py                 # 전역 설정
+│   │   └── system.py            # GPU 모니터링, pub_key 생성
+│   │
+│   ├── config.py                 # 전역 설정 (.env 지원)
 │   └── main.py                   # FastAPI 진입점
 │
-├── main.py                       # 서버 실행 파일
-├── requirements.txt             # Python 의존성
-├── IMPLEMENT.md                 # 구현 명세서 (Refactoring)
 ├── templates/                    # HTML 템플릿
-│   └── viewer.html              # 3D 뷰어 페이지
+│   └── viewer.html              # 3D 뷰어 (메트릭 표시)
+│
 ├── gaussian-splatting/          # Gaussian Splatting 레포지토리
 ├── data/jobs/                   # 작업 데이터 저장소
-└── gaussian_splatting.db        # SQLite 데이터베이스
+├── gaussian_splatting.db        # SQLite 데이터베이스
+├── main.py                       # 서버 실행 파일
+└── requirements.txt             # Python 의존성
 ```
 
-### 데이터 디렉토리 구조
+### 작업 디렉토리 구조
 
 각 작업은 `data/jobs/{job_id}/` 디렉토리에 저장됩니다:
 
 ```
 data/jobs/{job_id}/
 ├── upload/images/              # 업로드된 원본 이미지
+│
 ├── colmap/                     # COLMAP 처리 결과
-│   ├── database.db
-│   └── sparse/0/
-├── work/                       # 중간 처리 데이터
-│   ├── images/                 # 언디스토션된 이미지
-│   └── sparse/0/
-│       ├── cameras.txt
-│       ├── images.txt
-│       └── points3D.txt
-├── output/                     # 최종 결과물
-│   └── point_cloud/
-│       └── iteration_{N}/
-│           ├── point_cloud.ply
-│           ├── point_cloud_filtered.ply
-│           └── scene.splat
+│   ├── database.db            # COLMAP SQLite DB
+│   └── sparse/0/              # Sparse 재구성 (binary)
+│
+├── work/                       # COLMAP 출력 (GS 입력)
+│   ├── images/                # Undistorted 이미지
+│   ├── sparse/0/              # txt 형식 카메라/포인트
+│   ├── train.txt              # Train set 목록 (80%) ✨
+│   ├── test.txt               # Test set 목록 (20%) ✨
+│   └── stereo/                # Dense 재구성 (depth maps)
+│
+├── output/                     # Gaussian Splatting 출력
+│   ├── cameras.json
+│   ├── cfg_args               # 훈련 설정
+│   ├── input.ply              # 초기 point cloud
+│   ├── results.json           # 평가 메트릭 ✨
+│   ├── point_cloud/iteration_10000/
+│   │   ├── point_cloud.ply    # 훈련된 Gaussians
+│   │   ├── point_cloud_filtered.ply  # Outlier 제거
+│   │   └── scene.splat        # Splat 형식 (웹 뷰어용)
+│   └── test/ours_10000/       # 평가 결과 ✨
+│       ├── renders/           # 렌더링된 test 이미지
+│       └── gt/                # Ground truth 이미지
+│
 └── logs/
-    └── process.log            # 작업 처리 로그
+    └── process.log            # 작업 전체 로그
 ```
 
 ## API 사용법
@@ -183,15 +161,14 @@ data/jobs/{job_id}/
 
 | Method | Endpoint | 설명 |
 |--------|----------|------|
-| GET | `/` | API 정보 |
-| GET | `/health` | Health check (JSON) |
-| GET | `/healthz` | Health check (Plain text "ok") |
+| GET | `/` | API 정보 및 버전 |
+| GET | `/healthz` | Health check (k8s/Docker 표준) |
 | POST | `/recon/jobs` | 새 작업 생성 |
-| GET | `/recon/jobs/{job_id}/status` | 작업 상태 조회 |
+| GET | `/recon/jobs/{job_id}/status` | 작업 상태 조회 (step, progress, metrics 포함) |
 | GET | `/recon/queue` | 대기열 상태 |
 | GET | `/recon/pub/{pub_key}/cloud.ply` | PLY 파일 다운로드 |
 | GET | `/recon/pub/{pub_key}/scene.splat` | Splat 파일 다운로드 |
-| GET | `/v/{pub_key}` | 3D 뷰어 |
+| GET | `/v/{pub_key}` | 3D 뷰어 (메트릭 표시) |
 
 ### 1. 작업 생성
 
@@ -206,236 +183,240 @@ curl -X POST http://localhost:8000/recon/jobs \
 **응답:**
 ```json
 {
-  "job_id": "tOFL7kfe",
-  "pub_key": "cWjwdgZjSA",
+  "job_id": "6giVuAVu",
+  "pub_key": "tmb5Wy5OM9",
   "original_resolution": false
 }
 ```
 
-### 2. 작업 상태 확인 (Step & Progress 포함)
+### 2. 작업 상태 확인
 
 ```bash
-curl http://localhost:8000/recon/jobs/tOFL7kfe/status | jq
+curl http://localhost:8000/recon/jobs/6giVuAVu/status | jq
 ```
 
-**응답:**
+**응답 예시 (완료 시):**
 ```json
 {
-  "job_id": "tOFL7kfe",
-  "status": "PROCESSING",
-  "step": "GS_TRAIN",
-  "progress": 65,
+  "job_id": "6giVuAVu",
+  "status": "COMPLETED",
+  "step": "DONE",
+  "progress": 100,
+  "psnr": 17.40,
+  "ssim": 0.4942,
+  "lpips": 0.4135,
+  "gaussian_count": 343728,
+  "image_count": 17,
+  "iterations": 10000,
+  "processing_time_seconds": 800.5,
+  "viewer_url": "http://kaprpc.iptime.org:5051/v/tmb5Wy5OM9",
   "log_tail": [
-    ">> [COLMAP_FEAT] Extracting features...",
-    ">> [GS_TRAIN] Starting Gaussian Splatting training...",
-    "Training progress:  45%|████▌     | 4500/10000"
+    ">> [EVALUATION] PSNR: 17.40 dB",
+    ">> [EVALUATION] SSIM: 0.4942",
+    ">> [EVALUATION] LPIPS: 0.4135",
+    ">> [SUCCESS] Job completed!"
   ],
-  "created_at": "2025-10-13T08:00:01.586347",
-  "started_at": "2025-10-13T08:00:01.598771"
+  "created_at": "2025-10-13T13:30:45.196408",
+  "completed_at": "2025-10-13T13:44:05.650599"
 }
 ```
 
-**Step 진행 단계:**
-- `QUEUED` (0%): 대기 중
-- `PREFLIGHT` (5%): 사전 점검
-- `COLMAP_FEAT` (15%): 특징점 추출
-- `COLMAP_MATCH` (30%): 특징점 매칭
-- `COLMAP_MAP` (45%): Sparse 재구성
-- `COLMAP_UNDIST` (55%): 이미지 왜곡 보정
-- `GS_TRAIN` (65%): Gaussian Splatting 학습
-- `EXPORT_PLY` (90%): 후처리 및 내보내기
-- `DONE` (100%): 완료
-- `ERROR` (0%): 오류 발생
-
-## 개발 가이드
-
-### 코드 스타일
-
-- **Python**: PEP 8 준수
-- **Docstring**: Google Style
-- **Import 순서**: 표준 라이브러리 → 서드파티 → 로컬
-- **함수명**: `snake_case`
-- **클래스명**: `PascalCase`
-- **상수**: `UPPER_SNAKE_CASE`
-
-### 새 기능 추가 예시
-
-#### 1. 새 API 엔드포인트 추가
-
-```python
-# app/api/jobs.py
-@router.get("/jobs/{job_id}/metrics")
-async def get_job_metrics(job_id: str):
-    """작업 메트릭 조회"""
-    db = SessionLocal()
-    try:
-        job = crud.get_job_by_id(db, job_id)
-        if not job:
-            raise HTTPException(404, "Job not found")
-
-        return {
-            "gaussian_count": job.gaussian_count,
-            "processing_time": job.processing_time_seconds,
-            "colmap_points": job.colmap_points
-        }
-    finally:
-        db.close()
-```
-
-#### 2. DB 모델 필드 추가
-
-```python
-# 1. app/db/models.py 수정
-class Job(Base):
-    # ... 기존 필드들
-    custom_field = Column(String(100), nullable=True)
-
-# 2. 데이터베이스 마이그레이션
-sqlite3 gaussian_splatting.db "ALTER TABLE jobs ADD COLUMN custom_field VARCHAR(100);"
-
-# 3. app/db/crud.py에 update 함수 추가
-def update_custom_field(db: Session, job_id: str, value: str):
-    job = get_job_by_id(db, job_id)
-    if job:
-        job.custom_field = value
-        db.commit()
-    return job
-```
-
-#### 3. 새 필터 알고리즘 추가
-
-```python
-# app/utils/outlier_filter.py
-def custom_filter(ply_path: str, output_path: str, threshold: float = 0.5):
-    """커스텀 필터링 알고리즘"""
-    plydata = PlyData.read(ply_path)
-    vertex = plydata['vertex']
-
-    # 필터링 로직
-    positions = np.vstack([vertex['x'], vertex['y'], vertex['z']]).T
-    # ... 알고리즘 구현
-
-    # 결과 저장
-    filtered_vertex = np.array([...], dtype=vertex.dtype)
-    PlyData([Element.describe(filtered_vertex, 'vertex')]).write(output_path)
-
-# app/core/gaussian_splatting.py에서 사용
-from app.utils.outlier_filter import custom_filter
-custom_filter(input_ply, output_ply, threshold=0.7)
-```
-
-### 로깅 추가
-
-```python
-from app.utils.logger import setup_logger
-
-logger = setup_logger(__name__)
-
-def my_function():
-    logger.info("처리 시작")
-    logger.debug(f"상세 정보: {data}")
-    logger.warning("경고 메시지")
-    logger.error("오류 발생")
-```
-
-### 설정 값 추가
-
-```python
-# app/config.py
-class Settings:
-    # 기존 설정들...
-
-    # 새 설정 추가
-    NEW_FEATURE_ENABLED: bool = os.getenv("NEW_FEATURE_ENABLED", "False").lower() == "true"
-    NEW_THRESHOLD: float = float(os.getenv("NEW_THRESHOLD", "0.5"))
-
-# 사용
-from app.config import settings
-if settings.NEW_FEATURE_ENABLED:
-    # 기능 실행
-```
-
-## 브랜치 전략
-
-### 메인 브랜치
-
-- **`master`**: 프로덕션 안정 버전
-- **`feature/*`**: 새 기능 개발
-- **`bugfix/*`**: 버그 수정
-- **`hotfix/*`**: 긴급 수정
-
-### 워크플로우
+### 3. Health Check
 
 ```bash
-# 1. 새 기능 브랜치 생성
-git checkout master
-git pull origin master
-git checkout -b feature/new-feature
-
-# 2. 개발 및 커밋
-git add .
-git commit -m "feat: Add new feature
-
-Detailed description of changes"
-
-# 3. 푸시
-git push origin feature/new-feature
-
-# 4. Pull Request 생성 (GitHub/GitLab)
-
-# 5. 리뷰 후 master에 머지
+# Kubernetes/Docker liveness probe
+curl http://localhost:8000/healthz
+# 응답: "ok"
 ```
 
-### 커밋 메시지 컨벤션
+## 파이프라인 단계
 
+전체 파이프라인은 10단계로 구성되며, 각 단계마다 progress가 업데이트됩니다:
+
+| Step | Progress | 설명 | 소요 시간 (예상) |
+|------|----------|------|-----------------|
+| **QUEUED** | 0% | 대기열 대기 | - |
+| **PREFLIGHT** | 5% | 환경 사전 점검 (Python/CUDA/COLMAP/GS) | < 1초 |
+| **COLMAP_FEAT** | 15% | 특징점 추출 (SIFT) | 30초 ~ 2분 |
+| **COLMAP_MATCH** | 30% | 특징점 매칭 | 30초 ~ 2분 |
+| **COLMAP_MAP** | 45% | Sparse 3D 재구성 | 1~3분 |
+| **COLMAP_UNDIST** | 55% | 이미지 왜곡 보정 + train/test split | 30초 ~ 1분 |
+| **GS_TRAIN** | 65% | Gaussian Splatting 학습 (10000 iterations) | 8~15분 |
+| **EVALUATION** | 85% | Test set 렌더링 + 메트릭 계산 ✨ | 2~4분 |
+| **EXPORT_PLY** | 95% | Outlier filtering + Splat 변환 | 30초 ~ 1분 |
+| **DONE** | 100% | 완료 | - |
+| **ERROR** | 0% | 오류 발생 | - |
+
+**평균 처리 시간**:
+- 이미지 3-10장: 약 10-15분
+- 이미지 10-20장: 약 15-25분
+
+## 평가 메트릭
+
+### 자동 평가 파이프라인 ✨
+
+작업 완료 시 자동으로 다음 메트릭이 계산됩니다:
+
+| 메트릭 | 설명 | 범위 | 해석 |
+|--------|------|------|------|
+| **PSNR** | Peak Signal-to-Noise Ratio | 0 ~ ∞ dB | 높을수록 좋음 (>20dB: 양호) |
+| **SSIM** | Structural Similarity Index | 0 ~ 1 | 높을수록 좋음 (>0.8: 양호) |
+| **LPIPS** | Learned Perceptual Image Patch Similarity | 0 ~ 1 | 낮을수록 좋음 (<0.3: 양호) |
+
+### 메트릭 확인 방법
+
+1. **API 응답**:
+```bash
+curl http://localhost:8000/recon/jobs/{job_id}/status | jq '.psnr, .ssim, .lpips'
 ```
-<type>: <subject>
 
-<body>
+2. **3D 뷰어**:
+```
+http://kaprpc.iptime.org:5051/v/{pub_key}
+```
+뷰어 우측 상단에 메트릭 표시
 
-<footer>
+3. **results.json 파일**:
+```bash
+cat data/jobs/{job_id}/output/results.json
 ```
 
-**Type:**
-- `feat`: 새 기능
-- `fix`: 버그 수정
-- `docs`: 문서 변경
-- `style`: 코드 포맷팅
-- `refactor`: 리팩토링
-- `test`: 테스트 추가
-- `chore`: 빌드/설정 변경
+### Train/Test Split
 
-**예시:**
+- **자동 생성**: COLMAP 완료 후 자동으로 80/20 분할
+- **Train set**: 80% 이미지 (학습용)
+- **Test set**: 20% 이미지 (평가용, 최소 1장)
+- **파일 위치**:
+  - `data/jobs/{job_id}/work/train.txt`
+  - `data/jobs/{job_id}/work/test.txt`
+
+## 문제 해결
+
+### 1. Preflight 체크 실패
+
+**증상**: 작업이 PREFLIGHT 단계에서 실패
+
+**확인**:
+```bash
+python -c "from app.utils.preflight import run_preflight_check; print(run_preflight_check().get_summary())"
 ```
-feat: Add progress tracking to pipeline
 
-- Add step and progress fields to Job model
-- Update process_job to track 8 stages
-- Display progress percentage in API response
+**일반적인 원인**:
+- CUDA 미설치 또는 인식 불가
+- COLMAP 미설치
+- Gaussian Splatting 디렉토리 없음
+- 파일시스템 쓰기 권한 없음
 
-Implements IMPLEMENT.md section E
+**해결**:
+```bash
+# CUDA 확인
+nvidia-smi
+
+# COLMAP 설치
+sudo apt-get install colmap
+
+# Gaussian Splatting 클론
+git clone https://github.com/graphdeco-inria/gaussian-splatting --recursive
 ```
 
-## 테스트
+### 2. COLMAP 실패
+
+**증상**: COLMAP_MAP 단계에서 실패
+
+**원인**:
+- 이미지 품질 부족
+- 특징점 부족 (흐린 이미지, 단순한 표면)
+- 중복 이미지 또는 각도 변화 부족
+- 이미지 개수 부족 (<3장)
+
+**해결**:
+- 다양한 각도의 고해상도 이미지 사용 (최소 640x480)
+- 최소 3장 이상의 이미지 업로드
+- 텍스처가 풍부한 물체 촬영
+
+### 3. GPU 메모리 부족
+
+**증상**: `CUDA out of memory` 에러
+
+**해결**:
+```bash
+# 1. GPU 메모리 확인
+nvidia-smi
+
+# 2. 기존 프로세스 종료
+lsof -ti:8000 | xargs kill -9
+
+# 3. 설정 조정 (.env 파일)
+TRAINING_ITERATIONS=7000  # 10000에서 감소
+MAX_IMAGE_SIZE=1200       # 1600에서 감소
+MAX_CONCURRENT_JOBS=1     # 이미 기본값
+```
+
+### 4. 평가 메트릭이 NULL
+
+**증상**: psnr, ssim, lpips가 모두 NULL
+
+**원인**:
+- Train/test split 생성 실패
+- render.py 또는 metrics.py 실행 실패
+- results.json 파싱 오류
+
+**확인**:
+```bash
+# 1. train/test split 확인
+cat data/jobs/{job_id}/work/train.txt
+cat data/jobs/{job_id}/work/test.txt
+
+# 2. results.json 확인
+cat data/jobs/{job_id}/output/results.json
+
+# 3. 로그 확인
+tail -f data/jobs/{job_id}/logs/process.log
+```
+
+### 5. 포트 충돌
+
+**증상**: `Address already in use`
+
+**해결**:
+```bash
+# 기존 프로세스 종료
+lsof -ti:8000 | xargs kill -9
+
+# 또는 포트 변경 (.env)
+PORT=8001
+```
+
+### 6. 데이터베이스 초기화
+
+**필요한 경우**: 스키마 변경 후
+
+```bash
+# 주의: 기존 데이터 손실
+rm gaussian_splatting.db
+python -c "from app.db.database import init_db; init_db()"
+```
+
+## 검증 및 테스트
 
 ### 수동 테스트
 
 ```bash
 # 1. Health check
 curl http://localhost:8000/healthz
+# 응답: "ok"
 
 # 2. Preflight check
 python -c "from app.utils.preflight import run_preflight_check; print(run_preflight_check().get_summary())"
 
-# 3. 작업 생성 및 모니터링
-JOB_ID=$(curl -X POST http://localhost:8000/recon/jobs \
+# 3. 작업 생성
+curl -X POST http://localhost:8000/recon/jobs \
   -F "files=@test1.jpg" \
   -F "files=@test2.jpg" \
-  -F "files=@test3.jpg" \
-  | jq -r '.job_id')
+  -F "files=@test3.jpg" | jq
 
-# 4. 상태 확인 (반복)
-watch -n 5 "curl -s http://localhost:8000/recon/jobs/$JOB_ID/status | jq '.status, .step, .progress'"
+# 4. 상태 모니터링
+watch -n 5 "curl -s http://localhost:8000/recon/jobs/{job_id}/status | jq '.status, .step, .progress'"
 ```
 
 ### 업로드 검증 테스트
@@ -445,142 +426,94 @@ watch -n 5 "curl -s http://localhost:8000/recon/jobs/$JOB_ID/status | jq '.statu
 curl -X POST http://localhost:8000/recon/jobs \
   -F "files=@image1.jpg" \
   -F "files=@image2.jpg"
-# 예상: 400 에러, "이미지 3~20장만 허용합니다"
+# 예상: 400 에러
 
 # 2. 파일 크기 초과 (> 30MB)
 curl -X POST http://localhost:8000/recon/jobs \
   -F "files=@large_file.jpg"
-# 예상: 413 에러, "File too large"
+# 예상: 413 에러
 
 # 3. 잘못된 MIME 타입
 curl -X POST http://localhost:8000/recon/jobs \
   -F "files=@document.pdf"
-# 예상: 400 에러, "Unsupported MIME type"
+# 예상: 400 에러
 ```
 
-### 부하 테스트
+## 환경 변수 설정
+
+`.env` 파일을 생성하여 설정을 커스터마이즈할 수 있습니다:
 
 ```bash
-# 대기열 테스트 (동시 3개 작업 생성)
-for i in {1..3}; do
-  curl -X POST http://localhost:8000/recon/jobs \
-    -F "files=@test1.jpg" \
-    -F "files=@test2.jpg" \
-    -F "files=@test3.jpg" &
-done
+# 서버 설정
+HOST=0.0.0.0
+PORT=8000
+BASE_URL=http://localhost:8000
+DEBUG=false
 
-# 대기열 상태 확인
-curl http://localhost:8000/recon/queue | jq
-```
+# 처리 설정
+MAX_CONCURRENT_JOBS=1
+TRAINING_ITERATIONS=10000
 
-## 문제 해결
+# 이미지 설정
+MAX_IMAGE_SIZE=1600
+MIN_IMAGE_SIZE=100
+MAX_FILE_SIZE_MB=30
 
-### COLMAP 실패
+# GPU 모니터링
+MONITOR_GPU=true
+GPU_CHECK_INTERVAL=100
 
-**증상:** 작업이 COLMAP 단계에서 실패
+# 아웃라이어 필터링
+OUTLIER_K_NEIGHBORS=20
+OUTLIER_STD_THRESHOLD=2.0
+OUTLIER_REMOVE_SMALL_CLUSTERS=true
+OUTLIER_MIN_CLUSTER_RATIO=0.05
 
-**원인:**
-- 이미지 품질 부족
-- 특징점 부족 (흐린 이미지, 단순한 표면)
-- 중복 이미지 또는 각도 변화 부족
+# 데이터베이스
+DATABASE_URL=sqlite:///./gaussian_splatting.db
 
-**해결:**
-```bash
-# 1. 이미지 품질 확인
-identify -verbose image.jpg | grep -E "Geometry|Format"
-
-# 2. 다양한 각도의 이미지 사용
-# 3. 고해상도 이미지 권장 (최소 640x480)
-```
-
-### GPU 메모리 부족
-
-**증상:** `CUDA out of memory` 에러
-
-**해결:**
-```python
-# app/config.py
-TRAINING_ITERATIONS = 7000  # 10000에서 감소
-MAX_IMAGE_SIZE = 1200       # 1600에서 감소
-
-# 또는
-MAX_CONCURRENT_JOBS = 1     # 이미 기본값
-```
-
-```bash
-# GPU 메모리 확인
-nvidia-smi
-
-# 프로세스 강제 종료
-lsof -ti:8000 | xargs kill -9
-```
-
-### 포트 충돌
-
-**증상:** `Address already in use`
-
-**해결:**
-```bash
-# 기존 프로세스 종료
-lsof -ti:8000 | xargs kill -9
-
-# 또는 포트 변경
-# app/config.py
-PORT = 8001
-```
-
-### 데이터베이스 마이그레이션 오류
-
-**증상:** 새 필드 추가 후 에러
-
-**해결:**
-```bash
-# SQLite 마이그레이션
-sqlite3 gaussian_splatting.db "ALTER TABLE jobs ADD COLUMN new_field VARCHAR(100);"
-
-# 또는 DB 재생성 (주의: 데이터 손실)
-rm gaussian_splatting.db
-python -c "from app.db.database import init_db; init_db()"
-```
-
-### NumPy 버전 호환성
-
-**증상:** `AttributeError: module 'numpy' has no attribute 'xxx'`
-
-**해결:**
-```bash
-pip install "numpy<2"
+# 경로 설정 (고급)
+GAUSSIAN_SPLATTING_DIR=./gaussian-splatting
+DATA_DIR=./data/jobs
+CONDA_PYTHON=/path/to/conda/envs/codyssey/bin/python
 ```
 
 ## 성능 최적화
 
 ### GPU 메모리 관리
 - 최대 동시 작업 수: 1개 (기본)
-- GPU 메모리 모니터링: 20 iteration마다 자동 체크
+- GPU 메모리 모니터링: 100 iteration마다 자동 체크
 - 메모리 부족 시 자동 정리
 
-### 처리 시간 예상
-- **이미지 3-10장**: 약 5-10분
-- **이미지 10-20장**: 약 10-20분
-
-실제 시간은 이미지 해상도, GPU 성능, COLMAP 복잡도에 따라 달라집니다.
-
-## 기여 방법
-
-1. 이 레포지토리를 Fork
-2. 새 기능 브랜치 생성 (`git checkout -b feature/AmazingFeature`)
-3. 변경사항 커밋 (`git commit -m 'feat: Add AmazingFeature'`)
-4. 브랜치에 푸시 (`git push origin feature/AmazingFeature`)
-5. Pull Request 생성
+### 처리 시간 최적화
+- 이미지 리사이즈: `original_resolution=false` (권장)
+- Iteration 수 조정: 7000~10000 (기본 10000)
+- 최소 이미지 수 유지: 3~10장 (최적)
 
 ## 기술 스택
 
-- **Backend**: FastAPI, Uvicorn, SQLAlchemy
-- **3D Processing**: COLMAP, Gaussian Splatting
-- **Machine Learning**: PyTorch, scikit-learn
+- **Backend**: FastAPI 0.104.1, Uvicorn, SQLAlchemy
+- **3D Processing**: COLMAP, Gaussian Splatting (Inria 2023)
+- **Machine Learning**: PyTorch 2.0+, scikit-learn
 - **Frontend**: Three.js, antimatter15 splat viewer
 - **Database**: SQLite (기본), PostgreSQL (선택 가능)
 - **Async**: asyncio, aiofiles
+- **Validation**: Pydantic, python-multipart
+
+## 구현 상태
+
+- ✅ 핵심 파이프라인 (COLMAP + Gaussian Splatting)
+- ✅ 사전점검 (Preflight)
+- ✅ 업로드 검증
+- ✅ 단계별 진행률 추적 (step, progress)
+- ✅ 평가 메트릭 (PSNR, SSIM, LPIPS) ✨
+- ✅ Train/Test Split ✨
+- ✅ 작업 대기열
+- ✅ 아웃라이어 필터링
+- ✅ Health check (/healthz)
+- ✅ GPU 메모리 모니터링
+- ✅ 에러 처리 및 로깅
+
 
 ## 라이센스
 
@@ -594,8 +527,4 @@ pip install "numpy<2"
 - [3D Gaussian Splatting 논문](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)
 - [COLMAP 문서](https://colmap.github.io/)
 - [FastAPI 문서](https://fastapi.tiangolo.com/)
-- [SQLAlchemy 문서](https://docs.sqlalchemy.org/)
-
-## 지원
-
-문제가 발생하면 GitHub Issues에 등록해주세요.
+- [Kubernetes Health Checks](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/)

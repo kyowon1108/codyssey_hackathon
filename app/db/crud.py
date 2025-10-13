@@ -101,7 +101,10 @@ def update_job_results(
     removed_count: Optional[int] = None,
     file_size_mb: Optional[float] = None,
     colmap_registered_images: Optional[int] = None,
-    colmap_points: Optional[int] = None
+    colmap_points: Optional[int] = None,
+    psnr: Optional[float] = None,
+    ssim: Optional[float] = None,
+    lpips: Optional[float] = None
 ) -> Optional[Job]:
     """Update job results"""
     job = get_job_by_id(db, job_id)
@@ -120,6 +123,12 @@ def update_job_results(
         job.colmap_registered_images = colmap_registered_images
     if colmap_points is not None:
         job.colmap_points = colmap_points
+    if psnr is not None:
+        job.psnr = psnr
+    if ssim is not None:
+        job.ssim = ssim
+    if lpips is not None:
+        job.lpips = lpips
 
     db.commit()
     db.refresh(job)
