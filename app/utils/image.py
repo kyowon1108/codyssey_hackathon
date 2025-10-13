@@ -22,16 +22,34 @@ def validate_image_file(file: UploadFile) -> None:
         HTTPException: If file is invalid
     """
     # Check file extension
-    file_ext = Path(file.filename).suffix
-    if file_ext not in settings.ALLOWED_IMAGE_EXTENSIONS:
+    file_ext = Path(file.filename).suffix.lower()
+    allowed_extensions = {ext.lower() for ext in settings.ALLOWED_IMAGE_EXTENSIONS}
+    if file_ext not in allowed_extensions:
         raise HTTPException(
             400,
-            f"Unsupported file type: {file_ext}. Allowed: {settings.ALLOWED_IMAGE_EXTENSIONS}"
+            f"Unsupported file type: {file_ext}. Allowed: {', '.join(allowed_extensions)}"
+        )
+
+    # Check MIME type (IMPLEMENT.md 요구사항)
+    if file.content_type and file.content_type not in settings.ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            400,
+            f"Unsupported MIME type: {file.content_type}. Allowed: {', '.join(settings.ALLOWED_MIME_TYPES)}"
         )
 
     # Validate file content
     try:
         content = file.file.read()
+        file_size = len(content)
+
+        # Check file size (IMPLEMENT.md 요구사항: 개별 파일 30MB)
+        max_size_bytes = settings.MAX_FILE_SIZE_MB * 1024 * 1024
+        if file_size > max_size_bytes:
+            raise HTTPException(
+                413,
+                f"File too large: {file.filename}. Size: {file_size / 1024 / 1024:.1f}MB, Max: {settings.MAX_FILE_SIZE_MB}MB"
+            )
+
         img = Image.open(io.BytesIO(content))
         img.verify()
 
@@ -45,7 +63,7 @@ def validate_image_file(file: UploadFile) -> None:
                 f"Image too small: {img.width}x{img.height}. Minimum: {settings.MIN_IMAGE_SIZE}x{settings.MIN_IMAGE_SIZE}"
             )
 
-        logger.info(f"Validated image: {file.filename} ({img.width}x{img.height})")
+        logger.info(f"Validated image: {file.filename} ({img.width}x{img.height}, {file_size / 1024:.1f}KB)")
 
     except Exception as e:
         if isinstance(e, HTTPException):

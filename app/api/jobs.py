@@ -62,15 +62,29 @@ async def create_job(
     Returns:
         Job creation response with job_id and pub_key
     """
-    # Validate image count
+    # Validate image count (IMPLEMENT.md: 3~20장)
     if len(files) < settings.MIN_IMAGES:
-        raise HTTPException(400, f"At least {settings.MIN_IMAGES} images required")
+        raise HTTPException(400, f"이미지 {settings.MIN_IMAGES}~{settings.MAX_IMAGES}장만 허용합니다. (현재: {len(files)}장)")
     if len(files) > settings.MAX_IMAGES:
-        raise HTTPException(400, f"Maximum {settings.MAX_IMAGES} images allowed")
+        raise HTTPException(400, f"이미지 {settings.MIN_IMAGES}~{settings.MAX_IMAGES}장만 허용합니다. (현재: {len(files)}장)")
 
-    # Validate all images
+    # Validate all images and calculate total size
+    total_size = 0
     for file in files:
         validate_image_file(file)
+        # Read size (file pointer already at start after validate_image_file)
+        content = await file.read()
+        total_size += len(content)
+        # Reset for later save
+        await file.seek(0)
+
+    # Check total upload size (IMPLEMENT.md: 최대 500MB)
+    max_total_bytes = settings.MAX_TOTAL_SIZE_MB * 1024 * 1024
+    if total_size > max_total_bytes:
+        raise HTTPException(
+            413,
+            f"전체 업로드 크기 초과. 합계: {total_size / 1024 / 1024:.1f}MB, 최대: {settings.MAX_TOTAL_SIZE_MB}MB"
+        )
 
     # Generate unique IDs
     job_id = generate_job_id()
