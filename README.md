@@ -66,23 +66,25 @@ codyssey_hackathon/
 │   └── main.py                   # FastAPI 진입점
 │
 ├── main.py                       # 서버 실행 파일
+├── requirements.txt             # Python 의존성
 ├── templates/                    # HTML 템플릿
 │   └── viewer.html              # 3D 뷰어 페이지
-├── static/                       # 정적 파일
-│   └── splat-viewer.js          # antimatter15 splat viewer
+├── logs/                         # 서버 로그
 ├── gaussian-splatting/          # Gaussian Splatting 레포지토리
-├── data/jobs/{job_id}/          # 작업 데이터
-│   ├── upload/images/           # 원본 이미지
-│   ├── colmap/                  # COLMAP 출력
-│   ├── work/                    # 처리된 데이터
-│   ├── output/point_cloud/iteration_10000/
-│   │   ├── point_cloud.ply              # 원본 포인트 클라우드
-│   │   ├── point_cloud_filtered.ply     # 필터링된 결과
-│   │   └── scene.splat                  # 웹 뷰어용
-│   └── logs/process.log         # 작업 로그
-│
-├── legacy_scripts/              # 이전 스크립트 (참고용)
-└── requirements.txt             # Python 의존성
+├── data/                         # 작업 데이터 저장소
+│   └── jobs/{job_id}/           # 개별 작업 디렉토리
+│       ├── upload/images/       # 업로드된 원본 이미지
+│       ├── colmap/              # COLMAP 처리 결과
+│       ├── work/                # 중간 처리 데이터
+│       ├── output/              # 최종 결과물
+│       │   └── point_cloud/
+│       │       └── iteration_10000/
+│       │           ├── point_cloud.ply          # 원본 포인트 클라우드
+│       │           ├── point_cloud_filtered.ply # 필터링된 결과
+│       │           └── scene.splat              # 웹 뷰어용 최적화 파일
+│       └── logs/
+│           └── process.log      # 작업 처리 로그
+└── gaussian_splatting.db        # SQLite 데이터베이스
 ```
 
 ## 핵심 기능 상세
