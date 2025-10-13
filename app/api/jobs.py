@@ -185,6 +185,8 @@ async def get_job_status(job_id: str):
         return JobStatusResponse(
             job_id=job.job_id,
             status=job.status,
+            step=job.step,
+            progress=job.progress,
             log_tail=log_tail,
             gaussian_count=job.gaussian_count,
             viewer_url=viewer_url,

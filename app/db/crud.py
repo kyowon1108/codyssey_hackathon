@@ -57,9 +57,9 @@ def update_job_status(
 
     job.status = status
 
-    if status == "RUNNING" and not job.started_at:
+    if status == "PROCESSING" and not job.started_at:
         job.started_at = datetime.utcnow()
-    elif status in ["DONE", "FAILED"]:
+    elif status in ["COMPLETED", "FAILED"]:
         job.completed_at = datetime.utcnow()
         if job.started_at:
             job.processing_time_seconds = (job.completed_at - job.started_at).total_seconds()
@@ -68,6 +68,25 @@ def update_job_status(
         job.error_message = error_message
     if error_stage:
         job.error_stage = error_stage
+
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+def update_job_step(
+    db: Session,
+    job_id: str,
+    step: str,
+    progress: int
+) -> Optional[Job]:
+    """Update job step and progress (IMPLEMENT.md 섹션 E)"""
+    job = get_job_by_id(db, job_id)
+    if not job:
+        return None
+
+    job.step = step
+    job.progress = progress
 
     db.commit()
     db.refresh(job)

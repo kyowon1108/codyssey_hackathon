@@ -16,6 +16,8 @@ class JobStatusResponse(BaseModel):
     """Response schema for job status"""
     job_id: str
     status: str
+    step: Optional[str] = None  # IMPLEMENT.md 섹션 E
+    progress: Optional[int] = None  # IMPLEMENT.md 섹션 E (0-100)
     log_tail: List[str] = []
     created_at: Optional[str] = None
     started_at: Optional[str] = None

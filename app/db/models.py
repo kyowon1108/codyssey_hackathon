@@ -15,7 +15,11 @@ class Job(Base):
 
     job_id = Column(String(8), primary_key=True, index=True)
     pub_key = Column(String(10), unique=True, index=True, nullable=False)
-    status = Column(String(20), nullable=False, default="PENDING")  # PENDING, RUNNING, DONE, FAILED
+    status = Column(String(20), nullable=False, default="PENDING")  # PENDING, PROCESSING, COMPLETED, FAILED
+
+    # Step tracking (IMPLEMENT.md 섹션 E)
+    step = Column(String(30), nullable=True, default="QUEUED")  # QUEUED, PREFLIGHT, COLMAP_FEAT, etc.
+    progress = Column(Integer, nullable=True, default=0)  # 0-100
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -49,6 +53,8 @@ class Job(Base):
             "job_id": self.job_id,
             "pub_key": self.pub_key,
             "status": self.status,
+            "step": self.step,
+            "progress": self.progress,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
