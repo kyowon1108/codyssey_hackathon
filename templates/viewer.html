@@ -76,6 +76,20 @@
         <div class="info-line"><span class="info-label">Gaussian Splatting Viewer</span></div>
         <div class="info-line">Gaussians: <span id="gaussian-count">-</span></div>
         <div class="info-line">FPS: <span id="fps-counter">-</span></div>
+        {% if psnr or ssim or lpips %}
+        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1);">
+            <div class="info-line" style="font-size: 12px; color: #00d4ff; margin-bottom: 4px;">Evaluation Metrics</div>
+            {% if psnr %}
+            <div class="info-line" style="font-size: 11px;">PSNR: <span style="color: #00ff88;">{{ psnr|round(2) }} dB</span></div>
+            {% endif %}
+            {% if ssim %}
+            <div class="info-line" style="font-size: 11px;">SSIM: <span style="color: #00ff88;">{{ ssim|round(4) }}</span></div>
+            {% endif %}
+            {% if lpips %}
+            <div class="info-line" style="font-size: 11px;">LPIPS: <span style="color: #00ff88;">{{ lpips|round(4) }}</span></div>
+            {% endif %}
+        </div>
+        {% endif %}
         <div style="margin-top: 10px; font-size: 11px; color: #aaa;">
             Controls: Left click to rotate, Right click to pan, Scroll to zoom
         </div>

@@ -57,9 +57,9 @@ def update_job_status(
 
     job.status = status
 
-    if status == "RUNNING" and not job.started_at:
+    if status == "PROCESSING" and not job.started_at:
         job.started_at = datetime.utcnow()
-    elif status in ["DONE", "FAILED"]:
+    elif status in ["COMPLETED", "FAILED"]:
         job.completed_at = datetime.utcnow()
         if job.started_at:
             job.processing_time_seconds = (job.completed_at - job.started_at).total_seconds()
@@ -74,6 +74,25 @@ def update_job_status(
     return job
 
 
+def update_job_step(
+    db: Session,
+    job_id: str,
+    step: str,
+    progress: int
+) -> Optional[Job]:
+    """Update job step and progress (IMPLEMENT.md 섹션 E)"""
+    job = get_job_by_id(db, job_id)
+    if not job:
+        return None
+
+    job.step = step
+    job.progress = progress
+
+    db.commit()
+    db.refresh(job)
+    return job
+
+
 def update_job_results(
     db: Session,
     job_id: str,
@@ -82,7 +101,10 @@ def update_job_results(
     removed_count: Optional[int] = None,
     file_size_mb: Optional[float] = None,
     colmap_registered_images: Optional[int] = None,
-    colmap_points: Optional[int] = None
+    colmap_points: Optional[int] = None,
+    psnr: Optional[float] = None,
+    ssim: Optional[float] = None,
+    lpips: Optional[float] = None
 ) -> Optional[Job]:
     """Update job results"""
     job = get_job_by_id(db, job_id)
@@ -101,6 +123,12 @@ def update_job_results(
         job.colmap_registered_images = colmap_registered_images
     if colmap_points is not None:
         job.colmap_points = colmap_points
+    if psnr is not None:
+        job.psnr = psnr
+    if ssim is not None:
+        job.ssim = ssim
+    if lpips is not None:
+        job.lpips = lpips
 
     db.commit()
     db.refresh(job)

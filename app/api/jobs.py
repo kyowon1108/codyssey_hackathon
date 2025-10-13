@@ -62,15 +62,29 @@ async def create_job(
     Returns:
         Job creation response with job_id and pub_key
     """
-    # Validate image count
+    # Validate image count (IMPLEMENT.md: 3~20장)
     if len(files) < settings.MIN_IMAGES:
-        raise HTTPException(400, f"At least {settings.MIN_IMAGES} images required")
+        raise HTTPException(400, f"이미지 {settings.MIN_IMAGES}~{settings.MAX_IMAGES}장만 허용합니다. (현재: {len(files)}장)")
     if len(files) > settings.MAX_IMAGES:
-        raise HTTPException(400, f"Maximum {settings.MAX_IMAGES} images allowed")
+        raise HTTPException(400, f"이미지 {settings.MIN_IMAGES}~{settings.MAX_IMAGES}장만 허용합니다. (현재: {len(files)}장)")
 
-    # Validate all images
+    # Validate all images and calculate total size
+    total_size = 0
     for file in files:
         validate_image_file(file)
+        # Read size (file pointer already at start after validate_image_file)
+        content = await file.read()
+        total_size += len(content)
+        # Reset for later save
+        await file.seek(0)
+
+    # Check total upload size (IMPLEMENT.md: 최대 500MB)
+    max_total_bytes = settings.MAX_TOTAL_SIZE_MB * 1024 * 1024
+    if total_size > max_total_bytes:
+        raise HTTPException(
+            413,
+            f"전체 업로드 크기 초과. 합계: {total_size / 1024 / 1024:.1f}MB, 최대: {settings.MAX_TOTAL_SIZE_MB}MB"
+        )
 
     # Generate unique IDs
     job_id = generate_job_id()
@@ -171,6 +185,8 @@ async def get_job_status(job_id: str):
         return JobStatusResponse(
             job_id=job.job_id,
             status=job.status,
+            step=job.step,
+            progress=job.progress,
             log_tail=log_tail,
             gaussian_count=job.gaussian_count,
             viewer_url=viewer_url,
@@ -309,7 +325,7 @@ async def get_splat_file(pub_key: str):
 
 async def process_job(job_id: str, original_resolution: bool):
     """
-    Background job processing pipeline
+    Background job processing pipeline with step tracking
 
     Args:
         job_id: Job identifier
@@ -325,33 +341,58 @@ async def process_job(job_id: str, original_resolution: bool):
         try:
             # Update status to PROCESSING
             crud.update_job_status(db, job_id, "PROCESSING")
+            crud.update_job_step(db, job_id, "PREFLIGHT", 5)
             db.commit()
 
             with open(log_file_path, 'w') as log_file:
                 log_file.write(f">> [Job {job_id}] Starting reconstruction pipeline\n")
                 log_file.flush()
 
+                # Run preflight check
+                from app.utils.preflight import run_preflight_check
+
+                log_file.write(">> [PREFLIGHT] Running environment checks...\n")
+                log_file.flush()
+
+                preflight_result = run_preflight_check()
+                log_file.write(preflight_result.get_summary() + "\n")
+                log_file.flush()
+
+                if preflight_result.is_fatal():
+                    raise RuntimeError(f"Preflight check failed: {', '.join(preflight_result.errors)}")
+
+                log_file.write(">> [PREFLIGHT] All checks passed, proceeding...\n")
+                log_file.flush()
+
                 # Initialize COLMAP pipeline
                 colmap = COLMAPPipeline(job_dir)
 
                 # Step 1: Feature extraction
-                log_file.write(">> [COLMAP] Extracting features...\n")
+                crud.update_job_step(db, job_id, "COLMAP_FEAT", 15)
+                db.commit()
+                log_file.write(">> [COLMAP_FEAT] Extracting features...\n")
                 log_file.flush()
                 colmap.database_path.parent.mkdir(parents=True, exist_ok=True)
                 await colmap.extract_features(log_file)
 
                 # Step 2: Feature matching
-                log_file.write(">> [COLMAP] Matching features...\n")
+                crud.update_job_step(db, job_id, "COLMAP_MATCH", 30)
+                db.commit()
+                log_file.write(">> [COLMAP_MATCH] Matching features...\n")
                 log_file.flush()
                 await colmap.match_features(log_file)
 
                 # Step 3: Sparse reconstruction
-                log_file.write(">> [COLMAP] Reconstructing sparse model...\n")
+                crud.update_job_step(db, job_id, "COLMAP_MAP", 45)
+                db.commit()
+                log_file.write(">> [COLMAP_MAP] Reconstructing sparse model...\n")
                 log_file.flush()
                 model_path = await colmap.reconstruct(log_file)
 
                 # Step 4: Undistort images
-                log_file.write(">> [COLMAP] Undistorting images...\n")
+                crud.update_job_step(db, job_id, "COLMAP_UNDIST", 55)
+                db.commit()
+                log_file.write(">> [COLMAP_UNDIST] Undistorting images...\n")
                 log_file.flush()
                 work_dir = await colmap.undistort_images(model_path, log_file)
 
@@ -360,16 +401,32 @@ async def process_job(job_id: str, original_resolution: bool):
                 log_file.flush()
                 await colmap.convert_to_text(work_dir / "sparse" / "0", log_file)
 
+                # Step 5.5: Create train/test split for evaluation
+                log_file.write(">> [COLMAP] Creating train/test split for evaluation...\n")
+                log_file.flush()
+                colmap.create_train_test_split(work_dir)
+
                 # Step 6: Gaussian Splatting training
-                log_file.write(">> [GS] Starting Gaussian Splatting training...\n")
+                crud.update_job_step(db, job_id, "GS_TRAIN", 65)
+                db.commit()
+                log_file.write(">> [GS_TRAIN] Starting Gaussian Splatting training...\n")
                 log_file.flush()
 
                 output_dir = job_dir / "output"
                 gs_trainer = GaussianSplattingTrainer(work_dir, output_dir)
                 iteration_dir = await gs_trainer.train(log_file)
 
-                # Step 7: Post-processing
-                log_file.write(">> [GS] Post-processing results...\n")
+                # Step 7: Evaluation
+                crud.update_job_step(db, job_id, "EVALUATION", 85)
+                db.commit()
+                log_file.write(">> [EVALUATION] Running final model evaluation...\n")
+                log_file.flush()
+                metrics = await gs_trainer.evaluate(log_file)
+
+                # Step 8: Post-processing
+                crud.update_job_step(db, job_id, "EXPORT_PLY", 95)
+                db.commit()
+                log_file.write(">> [EXPORT_PLY] Post-processing results...\n")
                 log_file.flush()
                 gs_trainer.post_process(iteration_dir, log_file)
 
@@ -389,10 +446,23 @@ async def process_job(job_id: str, original_resolution: bool):
 
                 # Update job as completed
                 crud.update_job_status(db, job_id, "COMPLETED")
-                crud.update_job_results(db, job_id, gaussian_count=gaussian_count)
+                crud.update_job_step(db, job_id, "DONE", 100)
+
+                # Update results with gaussian count and metrics
+                update_kwargs = {"gaussian_count": gaussian_count}
+                if metrics:
+                    update_kwargs["psnr"] = metrics.get("psnr")
+                    update_kwargs["ssim"] = metrics.get("ssim")
+                    update_kwargs["lpips"] = metrics.get("lpips")
+
+                crud.update_job_results(db, job_id, **update_kwargs)
                 db.commit()
 
-                log_file.write(f">> [SUCCESS] Job completed! Generated {gaussian_count} Gaussians\n")
+                # Log completion
+                success_msg = f">> [SUCCESS] Job completed! Generated {gaussian_count} Gaussians"
+                if metrics:
+                    success_msg += f" | PSNR: {metrics['psnr']:.2f}, SSIM: {metrics['ssim']:.4f}, LPIPS: {metrics['lpips']:.4f}"
+                log_file.write(success_msg + "\n")
                 log_file.flush()
                 logger.info(f"Job {job_id} completed successfully")
 
@@ -410,6 +480,7 @@ async def process_job(job_id: str, original_resolution: bool):
                 db, job_id, "FAILED",
                 error_message=str(e)
             )
+            crud.update_job_step(db, job_id, "ERROR", 0)
             db.commit()
 
             # Write to log file

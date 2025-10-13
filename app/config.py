@@ -35,10 +35,15 @@ class Settings:
     # Processing limits
     MAX_CONCURRENT_JOBS: int = int(os.getenv("MAX_CONCURRENT_JOBS", "1"))
     MIN_IMAGES: int = int(os.getenv("MIN_IMAGES", "3"))
-    MAX_IMAGES: int = int(os.getenv("MAX_IMAGES", "200"))
+    MAX_IMAGES: int = int(os.getenv("MAX_IMAGES", "20"))
     MAX_IMAGE_SIZE: int = int(os.getenv("MAX_IMAGE_SIZE", "1600"))
     MIN_IMAGE_SIZE: int = 100
     ALLOWED_IMAGE_EXTENSIONS: set = {'.jpg', '.jpeg', '.png', '.JPG', '.JPEG', '.PNG'}
+
+    # 업로드 검증 (IMPLEMENT.md 기준)
+    MAX_FILE_SIZE_MB: int = 30  # 개별 파일 최대 크기
+    MAX_TOTAL_SIZE_MB: int = 500  # 전체 업로드 최대 크기
+    ALLOWED_MIME_TYPES: set = {'image/jpeg', 'image/png', 'image/webp'}
 
     # Gaussian Splatting training
     TRAINING_ITERATIONS: int = int(os.getenv("TRAINING_ITERATIONS", "10000"))
