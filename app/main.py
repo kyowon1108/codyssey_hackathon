@@ -85,6 +85,12 @@ async def health():
     return {"status": "healthy"}
 
 
+@app.get("/healthz")
+async def healthz():
+    """Health check endpoint (IMPLEMENT.md 요구사항)"""
+    return "ok"
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
