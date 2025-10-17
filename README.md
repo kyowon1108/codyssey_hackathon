@@ -114,7 +114,7 @@ codyssey_hackathon/
 │
 ├── gaussian-splatting/          # Gaussian Splatting 레포지토리
 ├── data/                        # 작업 데이터 저장소
-│   ├── jobs.db                 # SQLite 데이터베이스
+│   ├── jobs.db                 # SQLite 데이터베이스 (작업 메타데이터)
 │   └── jobs/                   # 작업별 디렉토리
 ├── main.py                       # 서버 실행 파일
 └── requirements.txt             # Python 의존성

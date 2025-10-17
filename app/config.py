@@ -18,7 +18,7 @@ class Settings:
     LOGS_DIR: Path = BASE_DIR / "logs"
 
     # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./gaussian_splatting.db")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./data/jobs.db")
 
     # API Settings
     APP_TITLE: str = "Gaussian Splatting 3D Reconstruction API"
