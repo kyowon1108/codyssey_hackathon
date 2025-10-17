@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import Optional, List
 from app.db.models import Job, ErrorLog
+from app.config import settings
 
 
 # ==================== Job CRUD ====================
@@ -15,9 +16,13 @@ def create_job(
     pub_key: str,
     image_count: int = 0,
     original_resolution: bool = False,
-    iterations: int = 10000
+    iterations: int = None
 ) -> Job:
     """Create a new job in database"""
+    # Use settings.TRAINING_ITERATIONS if not specified
+    if iterations is None:
+        iterations = settings.TRAINING_ITERATIONS
+
     job = Job(
         job_id=job_id,
         pub_key=pub_key,

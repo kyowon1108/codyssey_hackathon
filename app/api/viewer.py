@@ -38,15 +38,15 @@ async def view_result(request: Request, pub_key: str):
         if job.status != "COMPLETED":
             raise HTTPException(400, f"Job not completed yet. Current status: {job.status}")
 
-        # Build splat file URL
-        splat_url = f"{settings.BASE_URL}/recon/pub/{pub_key}/scene.splat"
+        # Build PLY file URL for PlayCanvas viewer
+        ply_url = f"{settings.BASE_URL}/recon/pub/{pub_key}/cloud.ply"
 
         return templates.TemplateResponse(
             "viewer.html",
             {
                 "request": request,
                 "pub_key": pub_key,
-                "splat_url": splat_url,
+                "ply_url": ply_url,
                 "gaussian_count": job.gaussian_count or 0,
                 "psnr": job.psnr,
                 "ssim": job.ssim,

@@ -414,14 +414,19 @@ async def process_job(job_id: str, original_resolution: bool):
 
                 output_dir = job_dir / "output"
                 gs_trainer = GaussianSplattingTrainer(work_dir, output_dir)
-                iteration_dir = await gs_trainer.train(log_file)
+
+                # Get iterations from job record
+                job_record = crud.get_job_by_id(db, job_id)
+                iterations = job_record.iterations if job_record else settings.TRAINING_ITERATIONS
+
+                iteration_dir = await gs_trainer.train(log_file, iterations=iterations)
 
                 # Step 7: Evaluation
                 crud.update_job_step(db, job_id, "EVALUATION", 85)
                 db.commit()
                 log_file.write(">> [EVALUATION] Running final model evaluation...\n")
                 log_file.flush()
-                metrics = await gs_trainer.evaluate(log_file)
+                metrics = await gs_trainer.evaluate(log_file, iterations=iterations)
 
                 # Step 8: Post-processing
                 crud.update_job_step(db, job_id, "EXPORT_PLY", 95)
