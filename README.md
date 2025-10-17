@@ -10,6 +10,7 @@ FastAPI 기반 3D 재구성 서비스로, 여러 이미지를 업로드하면 CO
 - [프로젝트 구조](#프로젝트-구조)
 - [API 사용법](#api-사용법)
 - [파이프라인 단계](#파이프라인-단계)
+- [3D 뷰어](#3d-뷰어)
 - [평가 메트릭](#평가-메트릭)
 - [문제 해결](#문제-해결)
 - [기술 스택](#기술-스택)
@@ -19,9 +20,9 @@ FastAPI 기반 3D 재구성 서비스로, 여러 이미지를 업로드하면 CO
 ### 핵심 기능
 - **자동 3D 재구성**: 3~20장의 이미지로 고품질 3D 모델 생성
 - **단계별 진행률 추적**: 10단계 파이프라인 실시간 모니터링 (0-100%)
-- **평가 메트릭**: PSNR, SSIM, LPIPS 자동 계산 및 표시 ✨
-- **Train/Test Split**: 80/20 자동 분할로 모델 품질 검증 ✨
-- **웹 3D 뷰어**: Splat 형식 최적화 실시간 렌더링
+- **평가 메트릭**: PSNR, SSIM, LPIPS 자동 계산 및 표시
+- **Train/Test Split**: 80/20 자동 분할로 모델 품질 검증
+- **PlayCanvas 3D 뷰어**: 공식 Model Viewer로 Gaussian Splatting PLY 실시간 렌더링
 
 ### 검증 및 안정성
 - **Preflight 체크**: Python, CUDA, COLMAP, 파일시스템 사전 검증
@@ -37,6 +38,7 @@ FastAPI 기반 3D 재구성 서비스로, 여러 이미지를 업로드하면 CO
 - **GPU**: CUDA 지원 GPU (12.8+ 권장, RTX 4060 Ti 16GB 검증 완료)
 - **디스크**: 작업당 약 1-5GB 여유 공간
 - **RAM**: 최소 16GB 권장
+- **Node.js**: 18.0+ (PlayCanvas 뷰어 빌드용, 선택사항)
 
 ## 빠른 시작
 
@@ -83,13 +85,11 @@ codyssey_hackathon/
 ├── app/                          # FastAPI 애플리케이션
 │   ├── api/                      # API 엔드포인트
 │   │   ├── jobs.py              # 작업 관리 + 파이프라인 오케스트레이션
-│   │   ├── viewer.py            # 3D 뷰어 렌더링
-│   │   └── dependencies.py      # 동시성 제어 (Semaphore)
+│   │   └── viewer.py            # 3D 뷰어 리다이렉션
 │   │
 │   ├── core/                     # 핵심 처리 로직
 │   │   ├── colmap.py            # COLMAP 파이프라인 + train/test split
-│   │   ├── gaussian_splatting.py # GS 학습 + 평가 파이프라인
-│   │   └── pipeline.py          # subprocess 실행 + GPU 모니터링
+│   │   └── gaussian_splatting.py # GS 학습 + 평가 파이프라인
 │   │
 │   ├── db/                       # 데이터베이스
 │   │   ├── models.py            # Job, ErrorLog 모델 (메트릭 포함)
@@ -97,22 +97,25 @@ codyssey_hackathon/
 │   │   └── database.py          # SQLAlchemy 설정
 │   │
 │   ├── utils/                    # 유틸리티
-│   │   ├── preflight.py         # 환경 사전 점검 (Python/CUDA/COLMAP)
+│   │   ├── preflight.py         # 환경 사전 점검
 │   │   ├── image.py             # 이미지 검증/저장
-│   │   ├── converter.py         # PLY → Splat 변환
 │   │   ├── outlier_filter.py   # Point cloud 필터링
 │   │   ├── logger.py            # 로깅 설정
-│   │   └── system.py            # GPU 모니터링, pub_key 생성
+│   │   └── system.py            # GPU 모니터링
 │   │
 │   ├── config.py                 # 전역 설정 (.env 지원)
 │   └── main.py                   # FastAPI 진입점
 │
-├── templates/                    # HTML 템플릿
-│   └── viewer.html              # 3D 뷰어 (메트릭 표시)
+├── viewer/                       # PlayCanvas Model Viewer
+│   ├── index.html               # 뷰어 진입점
+│   ├── index.js                 # 뷰어 로직 (번들)
+│   ├── style.css                # 뷰어 스타일
+│   └── static/                  # 아이콘, skybox, 라이브러리
 │
 ├── gaussian-splatting/          # Gaussian Splatting 레포지토리
-├── data/jobs/                   # 작업 데이터 저장소
-├── gaussian_splatting.db        # SQLite 데이터베이스
+├── data/                        # 작업 데이터 저장소
+│   ├── jobs.db                 # SQLite 데이터베이스
+│   └── jobs/                   # 작업별 디렉토리
 ├── main.py                       # 서버 실행 파일
 └── requirements.txt             # Python 의존성
 ```
@@ -132,20 +135,20 @@ data/jobs/{job_id}/
 ├── work/                       # COLMAP 출력 (GS 입력)
 │   ├── images/                # Undistorted 이미지
 │   ├── sparse/0/              # txt 형식 카메라/포인트
-│   ├── train.txt              # Train set 목록 (80%) ✨
-│   ├── test.txt               # Test set 목록 (20%) ✨
+│   ├── train.txt              # Train set 목록 (80%)
+│   ├── test.txt               # Test set 목록 (20%)
 │   └── stereo/                # Dense 재구성 (depth maps)
 │
 ├── output/                     # Gaussian Splatting 출력
 │   ├── cameras.json
 │   ├── cfg_args               # 훈련 설정
 │   ├── input.ply              # 초기 point cloud
-│   ├── results.json           # 평가 메트릭 ✨
+│   ├── results.json           # 평가 메트릭
 │   ├── point_cloud/iteration_10000/
 │   │   ├── point_cloud.ply    # 훈련된 Gaussians
 │   │   ├── point_cloud_filtered.ply  # Outlier 제거
 │   │   └── scene.splat        # Splat 형식 (웹 뷰어용)
-│   └── test/ours_10000/       # 평가 결과 ✨
+│   └── test/ours_10000/       # 평가 결과
 │       ├── renders/           # 렌더링된 test 이미지
 │       └── gt/                # Ground truth 이미지
 │
@@ -166,7 +169,8 @@ data/jobs/{job_id}/
 | GET | `/recon/queue` | 대기열 상태 |
 | GET | `/recon/pub/{pub_key}/cloud.ply` | PLY 파일 다운로드 |
 | GET | `/recon/pub/{pub_key}/scene.splat` | Splat 파일 다운로드 |
-| GET | `/v/{pub_key}` | 3D 뷰어 (메트릭 표시) |
+| GET | `/v/{pub_key}` | 3D 뷰어 (PlayCanvas로 리다이렉트) |
+| GET | `/viewer/` | PlayCanvas Model Viewer 직접 접근 |
 
 ### 1. 작업 생성
 
@@ -200,26 +204,36 @@ curl http://localhost:8000/recon/jobs/6giVuAVu/status | jq
   "status": "COMPLETED",
   "step": "DONE",
   "progress": 100,
-  "psnr": 17.40,
-  "ssim": 0.4942,
-  "lpips": 0.4135,
-  "gaussian_count": 343728,
-  "image_count": 17,
+  "psnr": 22.58,
+  "ssim": 0.854,
+  "lpips": 0.300,
+  "gaussian_count": 70636,
+  "image_count": 10,
   "iterations": 10000,
   "processing_time_seconds": 800.5,
-  "viewer_url": "http://kaprpc.iptime.org:5051/v/tmb5Wy5OM9",
+  "viewer_url": "http://localhost:8000/v/tmb5Wy5OM9",
   "log_tail": [
-    ">> [EVALUATION] PSNR: 17.40 dB",
-    ">> [EVALUATION] SSIM: 0.4942",
-    ">> [EVALUATION] LPIPS: 0.4135",
-    ">> [SUCCESS] Job completed!"
+    ">> [EVALUATION] PSNR: 22.58 dB",
+    ">> [EVALUATION] SSIM: 0.8540",
+    ">> [EVALUATION] LPIPS: 0.3000",
+    ">> [SUCCESS] Job completed! Generated 70636 Gaussians"
   ],
-  "created_at": "2025-10-13T13:30:45.196408",
-  "completed_at": "2025-10-13T13:44:05.650599"
+  "created_at": "2025-10-18T00:59:54.218990",
+  "completed_at": "2025-10-18T01:13:25.650599"
 }
 ```
 
-### 3. Health Check
+### 3. 3D 뷰어 접근
+
+```bash
+# 방법 1: Public key로 리다이렉트
+http://localhost:8000/v/tmb5Wy5OM9
+
+# 방법 2: 직접 PLY 파일 URL 전달
+http://localhost:8000/viewer/?load=http://localhost:8000/recon/pub/tmb5Wy5OM9/cloud.ply
+```
+
+### 4. Health Check
 
 ```bash
 # Kubernetes/Docker liveness probe
@@ -240,7 +254,7 @@ curl http://localhost:8000/healthz
 | **COLMAP_MAP** | 45% | Sparse 3D 재구성 | 1~3분 |
 | **COLMAP_UNDIST** | 55% | 이미지 왜곡 보정 + train/test split | 30초 ~ 1분 |
 | **GS_TRAIN** | 65% | Gaussian Splatting 학습 (10000 iterations) | 8~15분 |
-| **EVALUATION** | 85% | Test set 렌더링 + 메트릭 계산 ✨ | 2~4분 |
+| **EVALUATION** | 85% | Test set 렌더링 + 메트릭 계산 | 2~4분 |
 | **EXPORT_PLY** | 95% | Outlier filtering + Splat 변환 | 30초 ~ 1분 |
 | **DONE** | 100% | 완료 | - |
 | **ERROR** | 0% | 오류 발생 | - |
@@ -249,9 +263,41 @@ curl http://localhost:8000/healthz
 - 이미지 3-10장: 약 10-15분
 - 이미지 10-20장: 약 15-25분
 
+## 3D 뷰어
+
+### PlayCanvas Model Viewer
+
+공식 PlayCanvas Model Viewer를 사용하여 Gaussian Splatting 결과를 웹에서 실시간으로 확인할 수 있습니다.
+
+**주요 기능**:
+- ✅ Gaussian Splatting PLY 파일 네이티브 지원
+- ✅ glTF 2.0 형식도 지원
+- ✅ WebGL 및 WebGPU 렌더링
+- ✅ 직관적인 카메라 컨트롤 (Orbit/Fly 모드)
+- ✅ 다양한 스카이박스 프리셋
+- ✅ 드래그 앤 드롭으로 추가 모델 로드 가능
+- ✅ 라이팅 및 환경 설정
+
+**접근 방법**:
+1. **Public key 사용**: `/v/{pub_key}` - 자동으로 PLY 파일 로드
+2. **직접 URL**: `/viewer/?load={ply_url}` - 수동으로 파일 URL 지정
+3. **드래그 앤 드롭**: 뷰어에 직접 PLY/glTF 파일 드래그
+
+**컨트롤**:
+- 좌클릭 + 드래그: 카메라 회전
+- 우클릭 + 드래그: 카메라 이동 (Pan)
+- 마우스 휠: 줌 인/아웃
+- F 키: 모델에 카메라 포커스
+
+**뷰어 설정**:
+- 상단 툴바에서 Orbit/Fly 모드 전환
+- 스카이박스 변경 (17개 프리셋)
+- 라이팅 강도 조절
+- 배경 이미지 업로드 (HDR, PNG, JPG)
+
 ## 평가 메트릭
 
-### 자동 평가 파이프라인 ✨
+### 자동 평가 파이프라인
 
 작업 완료 시 자동으로 다음 메트릭이 계산됩니다:
 
@@ -268,13 +314,7 @@ curl http://localhost:8000/healthz
 curl http://localhost:8000/recon/jobs/{job_id}/status | jq '.psnr, .ssim, .lpips'
 ```
 
-2. **3D 뷰어**:
-```
-http://kaprpc.iptime.org:5051/v/{pub_key}
-```
-뷰어 우측 상단에 메트릭 표시
-
-3. **results.json 파일**:
+2. **results.json 파일**:
 ```bash
 cat data/jobs/{job_id}/output/results.json
 ```
@@ -346,7 +386,6 @@ lsof -ti:8000 | xargs kill -9
 
 # 3. 설정 조정 (.env 파일)
 TRAINING_ITERATIONS=7000  # 10000에서 감소
-MAX_IMAGE_SIZE=1200       # 1600에서 감소
 MAX_CONCURRENT_JOBS=1     # 이미 기본값
 ```
 
@@ -385,14 +424,24 @@ lsof -ti:8000 | xargs kill -9
 PORT=8001
 ```
 
-### 6. 데이터베이스 초기화
+### 6. 뷰어가 로드되지 않음
 
-**필요한 경우**: 스키마 변경 후
+**증상**: `/v/{pub_key}` 접근 시 빈 화면
 
+**원인**:
+- PLY 파일이 생성되지 않음
+- viewer 디렉토리가 없음
+- BASE_URL 설정 오류
+
+**확인**:
 ```bash
-# 주의: 기존 데이터 손실
-rm gaussian_splatting.db
-python -c "from app.db.database import init_db; init_db()"
+# 1. PLY 파일 확인
+ls -la data/jobs/{job_id}/output/point_cloud/iteration_10000/
+
+# 2. viewer 디렉토리 확인
+ls -la viewer/
+
+# 3. 브라우저 콘솔에서 에러 확인
 ```
 
 ## 검증 및 테스트
@@ -452,14 +501,16 @@ DEBUG=false
 MAX_CONCURRENT_JOBS=1
 TRAINING_ITERATIONS=10000
 
-# 이미지 설정
-MAX_IMAGE_SIZE=1600
-MIN_IMAGE_SIZE=100
+# 업로드 제한
+MIN_IMAGES=3
+MAX_IMAGES=20
+MAX_TOTAL_SIZE_MB=500
 MAX_FILE_SIZE_MB=30
 
-# GPU 모니터링
-MONITOR_GPU=true
-GPU_CHECK_INTERVAL=100
+# 타임아웃 (초)
+TIMEOUT_COLMAP_SEC=900
+TIMEOUT_GS_TRAIN_SEC=1800
+TIMEOUT_GS_METRICS_SEC=600
 
 # 아웃라이어 필터링
 OUTLIER_K_NEIGHBORS=20
@@ -467,13 +518,10 @@ OUTLIER_STD_THRESHOLD=2.0
 OUTLIER_REMOVE_SMALL_CLUSTERS=true
 OUTLIER_MIN_CLUSTER_RATIO=0.05
 
-# 데이터베이스
-DATABASE_URL=sqlite:///./gaussian_splatting.db
-
-# 경로 설정 (고급)
-GAUSSIAN_SPLATTING_DIR=./gaussian-splatting
+# 경로 설정
 DATA_DIR=./data/jobs
-CONDA_PYTHON=/path/to/conda/envs/codyssey/bin/python
+GS_ROOT=./gaussian-splatting
+CONDA_ENV_NAME=codyssey
 ```
 
 ## 성능 최적화
@@ -493,8 +541,8 @@ CONDA_PYTHON=/path/to/conda/envs/codyssey/bin/python
 - **Backend**: FastAPI 0.104.1, Uvicorn, SQLAlchemy
 - **3D Processing**: COLMAP, Gaussian Splatting (Inria 2023)
 - **Machine Learning**: PyTorch 2.0+, scikit-learn
-- **Frontend**: Three.js, antimatter15 splat viewer
-- **Database**: SQLite (기본), PostgreSQL (선택 가능)
+- **3D Viewer**: PlayCanvas Model Viewer (Official)
+- **Database**: SQLite (기본)
 - **Async**: asyncio, aiofiles
 - **Validation**: Pydantic, python-multipart
 
@@ -504,25 +552,26 @@ CONDA_PYTHON=/path/to/conda/envs/codyssey/bin/python
 - ✅ 사전점검 (Preflight)
 - ✅ 업로드 검증
 - ✅ 단계별 진행률 추적 (step, progress)
-- ✅ 평가 메트릭 (PSNR, SSIM, LPIPS) ✨
-- ✅ Train/Test Split ✨
+- ✅ 평가 메트릭 (PSNR, SSIM, LPIPS)
+- ✅ Train/Test Split
 - ✅ 작업 대기열
 - ✅ 아웃라이어 필터링
+- ✅ PlayCanvas 공식 3D 뷰어 통합
 - ✅ Health check (/healthz)
 - ✅ GPU 메모리 모니터링
 - ✅ 에러 처리 및 로깅
-
 
 ## 라이센스
 
 이 프로젝트는 다음 오픈소스 프로젝트를 사용합니다:
 - [Gaussian Splatting](https://github.com/graphdeco-inria/gaussian-splatting) - Inria License
 - [COLMAP](https://colmap.github.io/) - BSD License
-- [antimatter15 splat-viewer](https://github.com/antimatter15/splat) - MIT License
+- [PlayCanvas Model Viewer](https://github.com/playcanvas/model-viewer) - MIT License
 
 ## 참고 자료
 
 - [3D Gaussian Splatting 논문](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/)
 - [COLMAP 문서](https://colmap.github.io/)
 - [FastAPI 문서](https://fastapi.tiangolo.com/)
+- [PlayCanvas 문서](https://developer.playcanvas.com/)
 - [Kubernetes Health Checks](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/)
