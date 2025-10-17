@@ -60,6 +60,11 @@ static_dir = settings.BASE_DIR / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
+# Mount PlayCanvas Model Viewer
+viewer_dir = settings.BASE_DIR / "viewer"
+if viewer_dir.exists():
+    app.mount("/viewer", StaticFiles(directory=str(viewer_dir), html=True), name="viewer")
+
 # Include routers
 app.include_router(jobs.router)
 app.include_router(viewer.router)

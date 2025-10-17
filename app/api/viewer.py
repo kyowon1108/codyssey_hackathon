@@ -1,9 +1,8 @@
 """
 Viewer page API endpoints
 """
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -14,20 +13,17 @@ from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
 router = APIRouter(tags=["viewer"])
 
-templates = Jinja2Templates(directory=str(settings.BASE_DIR / "templates"))
 
-
-@router.get("/v/{pub_key}", response_class=HTMLResponse)
-async def view_result(request: Request, pub_key: str):
+@router.get("/v/{pub_key}")
+async def view_result(pub_key: str):
     """
-    Render viewer page for completed job
+    Redirect to PlayCanvas Model Viewer with PLY file
 
     Args:
-        request: FastAPI request object
         pub_key: Public key
 
     Returns:
-        HTML viewer page
+        Redirect to viewer with PLY URL
     """
     db = SessionLocal()
     try:
@@ -41,17 +37,9 @@ async def view_result(request: Request, pub_key: str):
         # Build PLY file URL for PlayCanvas viewer
         ply_url = f"{settings.BASE_URL}/recon/pub/{pub_key}/cloud.ply"
 
-        return templates.TemplateResponse(
-            "viewer.html",
-            {
-                "request": request,
-                "pub_key": pub_key,
-                "ply_url": ply_url,
-                "gaussian_count": job.gaussian_count or 0,
-                "psnr": job.psnr,
-                "ssim": job.ssim,
-                "lpips": job.lpips
-            }
-        )
+        # Redirect to PlayCanvas viewer with load parameter
+        viewer_url = f"/viewer/?load={ply_url}"
+
+        return RedirectResponse(url=viewer_url)
     finally:
         db.close()
