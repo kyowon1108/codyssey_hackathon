@@ -144,10 +144,11 @@ data/jobs/{job_id}/
 │   ├── cfg_args               # 훈련 설정
 │   ├── input.ply              # 초기 point cloud
 │   ├── results.json           # 평가 메트릭
+│   ├── exposure.json          # 노출 설정 (평가용)
+│   ├── per_view.json          # View별 메트릭
 │   ├── point_cloud/iteration_10000/
 │   │   ├── point_cloud.ply    # 훈련된 Gaussians
-│   │   ├── point_cloud_filtered.ply  # Outlier 제거
-│   │   └── scene.splat        # Splat 형식 (웹 뷰어용)
+│   │   └── point_cloud_filtered.ply  # Outlier 제거 후
 │   └── test/ours_10000/       # 평가 결과
 │       ├── renders/           # 렌더링된 test 이미지
 │       └── gt/                # Ground truth 이미지
@@ -168,7 +169,7 @@ data/jobs/{job_id}/
 | GET | `/recon/jobs/{job_id}/status` | 작업 상태 조회 (step, progress, metrics 포함) |
 | GET | `/recon/queue` | 대기열 상태 |
 | GET | `/recon/pub/{pub_key}/cloud.ply` | PLY 파일 다운로드 |
-| GET | `/recon/pub/{pub_key}/scene.splat` | Splat 파일 다운로드 |
+| GET | `/recon/pub/{pub_key}/scene.splat` | Splat 파일 다운로드 (legacy, 미사용) |
 | GET | `/v/{pub_key}` | 3D 뷰어 (PlayCanvas로 리다이렉트) |
 | GET | `/viewer/` | PlayCanvas Model Viewer 직접 접근 |
 
@@ -255,7 +256,7 @@ curl http://localhost:8000/healthz
 | **COLMAP_UNDIST** | 55% | 이미지 왜곡 보정 + train/test split | 30초 ~ 1분 |
 | **GS_TRAIN** | 65% | Gaussian Splatting 학습 (10000 iterations) | 8~15분 |
 | **EVALUATION** | 85% | Test set 렌더링 + 메트릭 계산 | 2~4분 |
-| **EXPORT_PLY** | 95% | Outlier filtering + Splat 변환 | 30초 ~ 1분 |
+| **EXPORT_PLY** | 95% | Outlier filtering (노이즈 제거) | 30초 ~ 1분 |
 | **DONE** | 100% | 완료 | - |
 | **ERROR** | 0% | 오류 발생 | - |
 
@@ -501,6 +502,10 @@ DEBUG=false
 MAX_CONCURRENT_JOBS=1
 TRAINING_ITERATIONS=10000
 
+# COLMAP 설정
+COLMAP_MAX_FEATURES=8192
+COLMAP_NUM_THREADS=8
+
 # 업로드 제한
 MIN_IMAGES=3
 MAX_IMAGES=20
@@ -516,7 +521,7 @@ TIMEOUT_GS_METRICS_SEC=600
 OUTLIER_K_NEIGHBORS=20
 OUTLIER_STD_THRESHOLD=2.0
 OUTLIER_REMOVE_SMALL_CLUSTERS=true
-OUTLIER_MIN_CLUSTER_RATIO=0.05
+OUTLIER_MIN_CLUSTER_RATIO=0.01
 
 # 경로 설정
 DATA_DIR=./data/jobs

@@ -31,6 +31,9 @@ class JobStatusResponse(BaseModel):
     file_size_mb: Optional[float] = None
     colmap_registered_images: Optional[int] = None
     colmap_points: Optional[int] = None
+    psnr: Optional[float] = None  # PSNR metric
+    ssim: Optional[float] = None  # SSIM metric
+    lpips: Optional[float] = None  # LPIPS metric
     viewer_url: Optional[str] = None
     error: Optional[str] = None
     error_stage: Optional[str] = None

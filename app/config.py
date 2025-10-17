@@ -53,7 +53,7 @@ class Settings:
     OPACITY_RESET_INTERVAL: int = 10000
 
     # COLMAP settings
-    COLMAP_MAX_FEATURES: int = int(os.getenv("COLMAP_MAX_FEATURES", "16384"))
+    COLMAP_MAX_FEATURES: int = int(os.getenv("COLMAP_MAX_FEATURES", "8192"))
     COLMAP_NUM_THREADS: int = int(os.getenv("COLMAP_NUM_THREADS", "8"))
     COLMAP_CAMERA_MODEL: str = "OPENCV"
 
