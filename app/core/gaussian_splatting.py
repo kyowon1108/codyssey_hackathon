@@ -11,7 +11,6 @@ from app.core.pipeline import run_command
 from app.utils.system import get_gpu_memory_usage
 from app.utils.logger import setup_logger
 from app.utils.outlier_filter import filter_outliers
-from app.utils.converter import convert_ply_to_splat
 
 logger = setup_logger(__name__)
 
@@ -179,18 +178,17 @@ class GaussianSplattingTrainer:
 
     def post_process(self, iteration_dir: Path, log_file) -> Optional[Dict]:
         """
-        Post-process results: outlier filtering, format conversion, and metrics parsing
+        Post-process results: outlier filtering
 
         Args:
             iteration_dir: Directory containing iteration results
             log_file: File handle for logging
 
         Returns:
-            Dictionary with metrics (psnr, ssim, lpips) if available, None otherwise
+            None (metrics are obtained from evaluate() method)
         """
         ply_file = iteration_dir / "point_cloud.ply"
         filtered_ply = iteration_dir / "point_cloud_filtered.ply"
-        splat_file = iteration_dir / "scene.splat"
 
         # Outlier filtering
         if ply_file.exists() and not filtered_ply.exists():
@@ -210,20 +208,6 @@ class GaussianSplattingTrainer:
             except Exception as e:
                 logger.error(f"Outlier filtering failed: {e}")
                 log_file.write(f">> Warning: Outlier filtering failed: {e}\n")
-            log_file.flush()
-
-        # Convert to splat
-        ply_for_conversion = filtered_ply if filtered_ply.exists() else ply_file
-        if ply_for_conversion.exists() and not splat_file.exists():
-            log_file.write(">> Converting to splat format...\n")
-            log_file.flush()
-
-            try:
-                convert_ply_to_splat(ply_for_conversion, splat_file)
-                log_file.write(">> Conversion complete!\n")
-            except Exception as e:
-                logger.error(f"Splat conversion failed: {e}")
-                log_file.write(f">> Warning: Splat conversion failed: {e}\n")
             log_file.flush()
 
         return None  # Metrics will be obtained from evaluate() method
