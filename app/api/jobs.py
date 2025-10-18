@@ -409,6 +409,25 @@ async def process_job(job_id: str, original_resolution: bool):
                 log_file.flush()
                 colmap.create_train_test_split(work_dir)
 
+                # Step 5.6: Validate COLMAP reconstruction quality
+                crud.update_job_step(db, job_id, "COLMAP_VALIDATE", 60)
+                db.commit()
+                log_file.write(">> [COLMAP_VALIDATE] Validating reconstruction quality...\n")
+                log_file.flush()
+
+                from app.utils.colmap_validator import validate_colmap_reconstruction
+
+                validation_result = validate_colmap_reconstruction(work_dir / "sparse" / "0")
+                log_file.write(validation_result.get_summary() + "\n")
+                log_file.flush()
+
+                if not validation_result.is_valid:
+                    error_msg = "COLMAP reconstruction quality is insufficient for training. " + "; ".join(validation_result.errors)
+                    raise RuntimeError(error_msg)
+
+                log_file.write(">> [COLMAP_VALIDATE] Reconstruction quality is acceptable, proceeding to training...\n")
+                log_file.flush()
+
                 # Step 6: Gaussian Splatting training
                 crud.update_job_step(db, job_id, "GS_TRAIN", 65)
                 db.commit()

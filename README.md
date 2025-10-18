@@ -254,6 +254,7 @@ curl http://localhost:8000/healthz
 | **COLMAP_MATCH** | 30% | 특징점 매칭 | 30초 ~ 2분 |
 | **COLMAP_MAP** | 45% | Sparse 3D 재구성 | 1~3분 |
 | **COLMAP_UNDIST** | 55% | 이미지 왜곡 보정 + train/test split | 30초 ~ 1분 |
+| **COLMAP_VALIDATE** | 60% | 재구성 품질 검증 (등록률, 3D 포인트 수 등) | < 1초 |
 | **GS_TRAIN** | 65% | Gaussian Splatting 학습 (10000 iterations) | 8~15분 |
 | **EVALUATION** | 85% | Test set 렌더링 + 메트릭 계산 | 2~4분 |
 | **EXPORT_PLY** | 95% | Outlier filtering (노이즈 제거) | 30초 ~ 1분 |
@@ -372,6 +373,43 @@ git clone https://github.com/graphdeco-inria/gaussian-splatting --recursive
 - 다양한 각도의 고해상도 이미지 사용 (최소 640x480)
 - 최소 3장 이상의 이미지 업로드
 - 텍스처가 풍부한 물체 촬영
+
+### 2-1. COLMAP 품질 검증 실패
+
+**증상**: COLMAP_VALIDATE 단계에서 실패
+
+**원인 및 해결**:
+
+| 검증 규칙 | 기준 (Error) | 권장 (Warning) | 실패 원인 | 해결 방법 |
+|----------|-------------|---------------|----------|----------|
+| **등록된 이미지 수** | 최소 3장 | 5장 이상 | 특징점 매칭 실패 | 텍스처가 풍부한 물체 촬영 |
+| **이미지 등록률** | 60% 이상 | 80% 이상 | 일부 이미지만 재구성 성공 | 중복/흐린 이미지 제거 |
+| **3D 포인트 수** | 최소 300개 | 800개 이상 | 재구성 품질 낮음 | 다양한 각도에서 촬영 |
+| **평균 트랙 길이** | 2.5 이상 | 3.5 이상 | 특징점이 적은 뷰에서만 관찰 | 오버랩이 충분한 이미지 사용 |
+| **포인트/이미지 비율** | 80 이상 | 100 이상 | 재구성이 너무 sparse | 이미지 품질/개수 증가 |
+
+**기준 설정 근거**:
+- Good quality (PSNR >= 20): 최소 10 reg imgs, 822+ points, track 4.04+
+- Medium quality (PSNR 15-20): 최소 3 reg imgs, 300+ points, track 2.5+
+- 실제 작업 데이터 분석을 바탕으로 품질이 낮은 재구성을 사전에 필터링
+
+**검증 로그 예시**:
+```
+>> [COLMAP_VALIDATION] Reconstruction Quality Check
+============================================================
+Statistics:
+  - Cameras: 1
+  - Total images: 10
+  - Registered images: 8
+  - 3D points: 1543
+  - Avg track length: 3.24
+
+Warnings:
+  ⚠ Moderate image registration rate: 80.0% (8/10 images registered)
+
+✓ Reconstruction is valid for training
+============================================================
+```
 
 ### 3. GPU 메모리 부족
 
