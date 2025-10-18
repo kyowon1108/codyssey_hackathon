@@ -65,14 +65,10 @@ pip install submodules/diff-gaussian-rasterization
 pip install submodules/simple-knn
 cd ..
 
-# 6. 환경 변수 설정 (선택)
-cp .env.example .env
-# .env 파일 편집
-
-# 7. Preflight 체크 (선택)
+# 6. Preflight 체크 (선택)
 python -c "from app.utils.preflight import run_preflight_check; print(run_preflight_check().get_summary())"
 
-# 8. 서버 실행
+# 7. 서버 실행
 python main.py
 ```
 
@@ -103,7 +99,7 @@ codyssey_hackathon/
 │   │   ├── logger.py            # 로깅 설정
 │   │   └── system.py            # GPU 모니터링
 │   │
-│   ├── config.py                 # 전역 설정 (.env 지원)
+│   ├── config.py                 # 전역 설정 (모든 환경 변수 관리)
 │   └── main.py                   # FastAPI 진입점
 │
 ├── viewer/                       # PlayCanvas Model Viewer
@@ -423,9 +419,8 @@ nvidia-smi
 # 2. 기존 프로세스 종료
 lsof -ti:8000 | xargs kill -9
 
-# 3. 설정 조정 (.env 파일)
-TRAINING_ITERATIONS=7000  # 10000에서 감소
-MAX_CONCURRENT_JOBS=1     # 이미 기본값
+# 3. 설정 조정 (app/config.py 파일)
+# TRAINING_ITERATIONS을 7000으로 감소 (기본값 10000)
 ```
 
 ### 4. 평가 메트릭이 NULL
@@ -459,8 +454,8 @@ tail -f data/jobs/{job_id}/logs/process.log
 # 기존 프로세스 종료
 lsof -ti:8000 | xargs kill -9
 
-# 또는 포트 변경 (.env)
-PORT=8001
+# 또는 포트 변경 (app/config.py)
+# PORT 환경변수 설정: export PORT=8001
 ```
 
 ### 6. 뷰어가 로드되지 않음
@@ -525,47 +520,41 @@ curl -X POST http://localhost:8000/recon/jobs \
 # 예상: 400 에러
 ```
 
-## 환경 변수 설정
+## 설정 커스터마이징
 
-`.env` 파일을 생성하여 설정을 커스터마이즈할 수 있습니다:
+모든 설정은 `app/config.py` 파일에서 관리됩니다. 환경 변수를 통해 일부 설정을 오버라이드할 수 있습니다:
+
+### 환경 변수로 설정 가능한 항목
 
 ```bash
 # 서버 설정
-HOST=0.0.0.0
-PORT=8000
-BASE_URL=http://localhost:8000
-DEBUG=false
+export HOST=0.0.0.0
+export PORT=8000
+export BASE_URL=http://localhost:8000
+export DEBUG=false
 
 # 처리 설정
-MAX_CONCURRENT_JOBS=1
-TRAINING_ITERATIONS=10000
+export MAX_CONCURRENT_JOBS=1
+export TRAINING_ITERATIONS=10000
 
 # COLMAP 설정
-COLMAP_MAX_FEATURES=8192
-COLMAP_NUM_THREADS=8
+export COLMAP_MAX_FEATURES=8192
+export COLMAP_NUM_THREADS=8
 
 # 업로드 제한
-MIN_IMAGES=3
-MAX_IMAGES=20
-MAX_TOTAL_SIZE_MB=500
-MAX_FILE_SIZE_MB=30
-
-# 타임아웃 (초)
-TIMEOUT_COLMAP_SEC=900
-TIMEOUT_GS_TRAIN_SEC=1800
-TIMEOUT_GS_METRICS_SEC=600
-
-# 아웃라이어 필터링
-OUTLIER_K_NEIGHBORS=20
-OUTLIER_STD_THRESHOLD=2.0
-OUTLIER_REMOVE_SMALL_CLUSTERS=true
-OUTLIER_MIN_CLUSTER_RATIO=0.01
-
-# 경로 설정
-DATA_DIR=./data/jobs
-GS_ROOT=./gaussian-splatting
-CONDA_ENV_NAME=codyssey
+export MIN_IMAGES=3
+export MAX_IMAGES=20
 ```
+
+### config.py에서 직접 수정 가능한 항목
+
+`app/config.py` 파일을 직접 수정하여 다음 항목들을 조정할 수 있습니다:
+
+- **업로드 검증**: `MAX_FILE_SIZE_MB`, `MAX_TOTAL_SIZE_MB`, `ALLOWED_MIME_TYPES`
+- **Gaussian Splatting**: `SAVE_ITERATIONS`, `DENSIFY_UNTIL_ITER`, `DENSIFICATION_INTERVAL`
+- **아웃라이어 필터링**: `OUTLIER_K_NEIGHBORS`, `OUTLIER_STD_THRESHOLD`, `OUTLIER_MIN_CLUSTER_RATIO`
+- **경로 설정**: `DATA_DIR`, `GAUSSIAN_SPLATTING_DIR`, `LOGS_DIR`
+- **GPU 모니터링**: `GPU_CHECK_INTERVAL`, `MONITOR_GPU`
 
 ## 성능 최적화
 
