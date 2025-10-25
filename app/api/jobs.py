@@ -267,8 +267,13 @@ async def get_point_cloud(pub_key: str):
         # Get iteration from job record
         iterations = job.iterations if job.iterations else settings.TRAINING_ITERATIONS
 
-        # Outlier filtering removed - only original PLY exists now
-        ply_file = settings.DATA_DIR / job.job_id / "output" / "point_cloud" / f"iteration_{iterations}" / "point_cloud.ply"
+        # Try filtered PLY first, fallback to original
+        iteration_dir = settings.DATA_DIR / job.job_id / "output" / "point_cloud" / f"iteration_{iterations}"
+        filtered_ply = iteration_dir / "point_cloud_filtered.ply"
+        original_ply = iteration_dir / "point_cloud.ply"
+
+        # Prefer filtered version if it exists
+        ply_file = filtered_ply if filtered_ply.exists() else original_ply
 
         if not ply_file.exists():
             raise HTTPException(404, "Point cloud file not found")
