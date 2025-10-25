@@ -431,14 +431,10 @@ async def process_job(job_id: str, original_resolution: bool):
 
                 iteration_dir = await gs_trainer.train(log_file, iterations=iterations)
 
-                # Step 7: Evaluation
-                crud.update_job_step(db, job_id, "EVALUATION", 85)
-                db.commit()
-                log_file.write(">> [EVALUATION] Running final model evaluation...\n")
-                log_file.flush()
-                metrics = await gs_trainer.evaluate(log_file, iterations=iterations)
+                # Evaluation removed - saves 30-60s per job
+                # Users can judge quality directly in 3D viewer
 
-                # Step 8: Post-processing
+                # Step 7: Post-processing
                 crud.update_job_step(db, job_id, "EXPORT_PLY", 95)
                 db.commit()
                 log_file.write(">> [EXPORT_PLY] Post-processing results...\n")
@@ -462,21 +458,10 @@ async def process_job(job_id: str, original_resolution: bool):
                 # Update job as completed
                 crud.update_job_status(db, job_id, "COMPLETED")
                 crud.update_job_step(db, job_id, "DONE", 100)
-
-                # Update results with gaussian count and metrics
-                update_kwargs = {"gaussian_count": gaussian_count}
-                if metrics:
-                    update_kwargs["psnr"] = metrics.get("psnr")
-                    update_kwargs["ssim"] = metrics.get("ssim")
-                    update_kwargs["lpips"] = metrics.get("lpips")
-
-                crud.update_job_results(db, job_id, **update_kwargs)
                 db.commit()
 
                 # Log completion
                 success_msg = f">> [SUCCESS] Job completed! Generated {gaussian_count} Gaussians"
-                if metrics:
-                    success_msg += f" | PSNR: {metrics['psnr']:.2f}, SSIM: {metrics['ssim']:.4f}, LPIPS: {metrics['lpips']:.4f}"
                 log_file.write(success_msg + "\n")
                 log_file.flush()
                 logger.info(f"Job {job_id} completed successfully")
