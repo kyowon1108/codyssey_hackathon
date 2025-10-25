@@ -178,36 +178,52 @@ class GaussianSplattingTrainer:
 
     def post_process(self, iteration_dir: Path, log_file) -> Optional[Dict]:
         """
-        Post-process results: outlier filtering
+        Post-process results: GZIP compression only (outlier filtering removed)
 
         Args:
             iteration_dir: Directory containing iteration results
             log_file: File handle for logging
 
         Returns:
-            None (metrics are obtained from evaluate() method)
+            None
         """
+        import gzip
+
         ply_file = iteration_dir / "point_cloud.ply"
-        filtered_ply = iteration_dir / "point_cloud_filtered.ply"
 
-        # Outlier filtering
-        if ply_file.exists() and not filtered_ply.exists():
-            log_file.write(">> Applying outlier filtering...\n")
+        if not ply_file.exists():
+            log_file.write(">> Warning: point_cloud.ply not found\n")
             log_file.flush()
+            return None
 
-            try:
-                filter_outliers(
-                    ply_file,
-                    filtered_ply,
-                    k_neighbors=settings.OUTLIER_K_NEIGHBORS,
-                    std_threshold=settings.OUTLIER_STD_THRESHOLD,
-                    remove_small_clusters=settings.OUTLIER_REMOVE_SMALL_CLUSTERS,
-                    min_cluster_ratio=settings.OUTLIER_MIN_CLUSTER_RATIO
+        # Outlier filtering removed - saves 10-20s per job
+        # Gaussian Splatting already handles noise well through:
+        # - Opacity learning
+        # - Densification/Pruning
+        # - Adaptive density control
+
+        # GZIP compression for faster web delivery
+        log_file.write(f">> Compressing {ply_file.name}...\n")
+        log_file.flush()
+
+        try:
+            gz_path = ply_file.with_suffix('.ply.gz')
+            if not gz_path.exists():
+                with open(ply_file, 'rb') as f_in:
+                    with gzip.open(gz_path, 'wb', compresslevel=6) as f_out:
+                        f_out.write(f_in.read())
+
+                original_size = ply_file.stat().st_size / 1024 / 1024
+                compressed_size = gz_path.stat().st_size / 1024 / 1024
+                ratio = (1 - compressed_size / original_size) * 100
+
+                log_file.write(
+                    f">> Compressed {ply_file.name}: "
+                    f"{original_size:.1f}MB → {compressed_size:.1f}MB ({ratio:.1f}% reduction)\n"
                 )
-                log_file.write(">> Outlier filtering complete!\n")
-            except Exception as e:
-                logger.error(f"Outlier filtering failed: {e}")
-                log_file.write(f">> Warning: Outlier filtering failed: {e}\n")
-            log_file.flush()
+        except Exception as e:
+            logger.error(f"Compression failed for {ply_file.name}: {e}")
+            log_file.write(f">> Warning: Compression failed for {ply_file.name}: {e}\n")
+        log_file.flush()
 
-        return None  # Metrics will be obtained from evaluate() method
+        return None

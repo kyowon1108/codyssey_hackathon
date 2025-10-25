@@ -261,28 +261,42 @@ async def get_point_cloud(pub_key: str):
         if job.status != "COMPLETED":
             raise HTTPException(400, "Job not completed yet")
 
-        # Try new structure first
-        ply_file = settings.DATA_DIR / job.job_id / "output" / "point_cloud" / f"iteration_{settings.TRAINING_ITERATIONS}" / "point_cloud_filtered.ply"
+        # Get iteration from job record
+        iterations = job.iterations if job.iterations else settings.TRAINING_ITERATIONS
 
-        if not ply_file.exists():
-            # Fallback to unfiltered (new structure)
-            ply_file = settings.DATA_DIR / job.job_id / "output" / "point_cloud" / f"iteration_{settings.TRAINING_ITERATIONS}" / "point_cloud.ply"
-
-        # Try old structure (gs_output)
-        if not ply_file.exists():
-            ply_file = settings.DATA_DIR / job.job_id / "gs_output" / "point_cloud" / f"iteration_{settings.TRAINING_ITERATIONS}" / "point_cloud_filtered.ply"
-
-        if not ply_file.exists():
-            ply_file = settings.DATA_DIR / job.job_id / "gs_output" / "point_cloud" / f"iteration_{settings.TRAINING_ITERATIONS}" / "point_cloud.ply"
+        # Outlier filtering removed - only original PLY exists now
+        ply_file = settings.DATA_DIR / job.job_id / "output" / "point_cloud" / f"iteration_{iterations}" / "point_cloud.ply"
 
         if not ply_file.exists():
             raise HTTPException(404, "Point cloud file not found")
 
-        return FileResponse(
-            path=str(ply_file),
-            media_type="application/octet-stream",
-            filename="point_cloud.ply"
-        )
+        # Check for compressed version
+        gz_file = ply_file.with_suffix('.ply.gz')
+
+        if gz_file.exists():
+            # Serve pre-compressed file
+            from fastapi.responses import Response
+            with open(gz_file, 'rb') as f:
+                content = f.read()
+
+            return Response(
+                content=content,
+                media_type="application/octet-stream",
+                headers={
+                    "Content-Encoding": "gzip",
+                    "Content-Disposition": "attachment; filename=point_cloud.ply",
+                    "Cache-Control": "public, max-age=31536000",
+                    "Vary": "Accept-Encoding"
+                }
+            )
+        else:
+            # Fallback to uncompressed
+            return FileResponse(
+                path=str(ply_file),
+                media_type="application/octet-stream",
+                filename="point_cloud.ply",
+                headers={"Cache-Control": "public, max-age=31536000"}
+            )
     finally:
         db.close()
 
@@ -439,10 +453,8 @@ async def process_job(job_id: str, original_resolution: bool):
                 log_file.flush()
                 gs_trainer.post_process(iteration_dir, log_file)
 
-                # Count Gaussians
-                ply_file = iteration_dir / "point_cloud_filtered.ply"
-                if not ply_file.exists():
-                    ply_file = iteration_dir / "point_cloud.ply"
+                # Count Gaussians (no filtered version anymore)
+                ply_file = iteration_dir / "point_cloud.ply"
 
                 gaussian_count = 0
                 if ply_file.exists():
