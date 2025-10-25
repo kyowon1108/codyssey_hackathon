@@ -188,16 +188,19 @@ async def get_job_status(job_id: str):
             step=job.step,
             progress=job.progress,
             log_tail=log_tail,
-            gaussian_count=job.gaussian_count,
-            psnr=job.psnr,
-            ssim=job.ssim,
-            lpips=job.lpips,
+            # Removed for MVP: gaussian_count, psnr, ssim, lpips
             viewer_url=viewer_url,
             error=job.error_message,
             created_at=job.created_at.isoformat() if job.created_at else None,
             started_at=job.started_at.isoformat() if job.started_at else None,
             completed_at=job.completed_at.isoformat() if job.completed_at else None,
-            queue_position=queue_position
+            queue_position=queue_position,
+            image_count=job.image_count,
+            iterations=job.iterations,
+            colmap_registered_images=job.colmap_registered_images,
+            colmap_points=job.colmap_points,
+            processing_time_seconds=job.processing_time_seconds,
+            error_stage=job.error_stage
         )
     finally:
         db.close()
