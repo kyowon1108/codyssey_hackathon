@@ -36,7 +36,7 @@ class Settings:
     MAX_CONCURRENT_JOBS: int = int(os.getenv("MAX_CONCURRENT_JOBS", "1"))
     MIN_IMAGES: int = int(os.getenv("MIN_IMAGES", "3"))
     MAX_IMAGES: int = int(os.getenv("MAX_IMAGES", "20"))
-    MAX_IMAGE_SIZE: int = int(os.getenv("MAX_IMAGE_SIZE", "1280"))
+    MAX_IMAGE_SIZE: int = int(os.getenv("MAX_IMAGE_SIZE", "1600"))
     MIN_IMAGE_SIZE: int = 100
     ALLOWED_IMAGE_EXTENSIONS: set = {'.jpg', '.jpeg', '.png', '.JPG', '.JPEG', '.PNG'}
 
