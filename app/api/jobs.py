@@ -415,9 +415,9 @@ async def process_job(job_id: str, original_resolution: bool):
                 log_file.write(">> [COLMAP_VALIDATE] Validating reconstruction quality...\n")
                 log_file.flush()
 
-                from app.utils.colmap_validator import validate_colmap_reconstruction
+                from app.utils.colmap_validator import simple_validation
 
-                validation_result = validate_colmap_reconstruction(work_dir / "sparse" / "0")
+                validation_result = simple_validation(work_dir / "sparse" / "0")
                 log_file.write(validation_result.get_summary() + "\n")
                 log_file.flush()
 

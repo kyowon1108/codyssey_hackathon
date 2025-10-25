@@ -148,7 +148,7 @@ def read_points3D_text(points_file: Path) -> Tuple[int, float]:
 
 def validate_colmap_reconstruction(sparse_dir: Path) -> COLMAPValidationResult:
     """
-    Validate COLMAP sparse reconstruction quality
+    Validate COLMAP sparse reconstruction quality (STRICT - for production)
 
     Args:
         sparse_dir: Path to sparse/0 directory
@@ -234,10 +234,11 @@ def validate_colmap_reconstruction(sparse_dir: Path) -> COLMAPValidationResult:
 
     # Rule 5: Average track length should be reasonable
     # Track length correlates with reconstruction quality
-    if avg_track_length < 2.5:
-        result.add_error(f"Low average track length: {avg_track_length:.2f} (minimum: 2.5)")
-    elif avg_track_length < 3.5:
-        result.add_warning(f"Low average track length: {avg_track_length:.2f} (recommended: 3.5+ for good quality)")
+    # Note: Faces/portraits may have lower track length (2.0-2.5)
+    if avg_track_length < 2.0:
+        result.add_error(f"Low average track length: {avg_track_length:.2f} (minimum: 2.0)")
+    elif avg_track_length < 3.0:
+        result.add_warning(f"Low average track length: {avg_track_length:.2f} (recommended: 3.0+ for good quality)")
 
     # Rule 6: Points-to-images ratio
     if registered_images > 0:
@@ -246,5 +247,104 @@ def validate_colmap_reconstruction(sparse_dir: Path) -> COLMAPValidationResult:
             result.add_error(f"Too sparse reconstruction: {points_per_image:.1f} points/image (minimum: 80)")
         elif points_per_image < 100:
             result.add_warning(f"Sparse reconstruction: {points_per_image:.1f} points/image (recommended: 100+)")
+
+    return result
+
+
+def simple_validation(sparse_dir: Path) -> COLMAPValidationResult:
+    """
+    Simplified COLMAP validation for MVP (only 2 essential checks)
+
+    This is more permissive than validate_colmap_reconstruction().
+    Even low-quality reconstructions may produce acceptable 3D Gaussian Splatting results.
+    Users can judge quality directly in the 3D viewer.
+
+    Args:
+        sparse_dir: Path to sparse/0 directory
+
+    Returns:
+        COLMAPValidationResult with validation details
+    """
+    result = COLMAPValidationResult()
+
+    # Check if sparse directory exists
+    if not sparse_dir.exists():
+        result.add_error(f"Sparse reconstruction directory not found: {sparse_dir}")
+        return result
+
+    # Required files
+    cameras_file = sparse_dir / "cameras.txt"
+    images_file = sparse_dir / "images.txt"
+    points_file = sparse_dir / "points3D.txt"
+
+    # ERROR 1: Check if all required files exist
+    if not cameras_file.exists():
+        result.add_error("cameras.txt not found")
+        return result
+
+    if not images_file.exists():
+        result.add_error("images.txt not found")
+        return result
+
+    if not points_file.exists():
+        result.add_error("points3D.txt not found")
+        return result
+
+    # Read reconstruction data
+    camera_count = read_cameras_text(cameras_file)
+    total_images, registered_images = read_images_text(images_file)
+    point_count, avg_track_length = read_points3D_text(points_file)
+
+    # Store stats
+    result.stats = {
+        "Cameras": camera_count,
+        "Total images": total_images,
+        "Registered images": registered_images,
+        "3D points": point_count,
+        "Avg track length": f"{avg_track_length:.2f}"
+    }
+
+    # ERROR 2: Minimum registered images (at least 3 for stable reconstruction)
+    if registered_images < 3:
+        result.add_error(f"Too few registered images: {registered_images} (minimum: 3)")
+        return result
+
+    # Everything else is just a warning
+    # Users can judge quality in 3D viewer
+
+    # Warning: Low camera count
+    if camera_count == 0:
+        result.add_warning("No cameras found in reconstruction")
+
+    # Warning: Low registered image count
+    if registered_images < 5:
+        result.add_warning(f"Low registered image count: {registered_images} (recommended: 5+)")
+
+    # Warning: Registration rate
+    if total_images > 0:
+        registration_rate = registered_images / total_images
+        if registration_rate < 0.6:
+            result.add_warning(
+                f"Low image registration rate: {registration_rate*100:.1f}% "
+                f"({registered_images}/{total_images} images registered)"
+            )
+
+    # Warning: Low 3D point count
+    if point_count < 300:
+        result.add_warning(f"Low 3D point count: {point_count} (recommended: 300+)")
+    elif point_count < 800:
+        result.add_warning(f"Moderate 3D point count: {point_count} (recommended: 800+ for good quality)")
+
+    # Warning: Low average track length
+    if avg_track_length < 2.0:
+        result.add_warning(f"Low average track length: {avg_track_length:.2f} (recommended: 2.0+)")
+    elif avg_track_length < 3.0:
+        result.add_warning(f"Moderate average track length: {avg_track_length:.2f} (recommended: 3.0+)")
+
+    # Warning: Low points-to-images ratio
+    if registered_images > 0:
+        points_per_image = point_count / registered_images
+        if points_per_image < 80:
+            result.add_warning(f"Sparse reconstruction: {points_per_image:.1f} points/image (recommended: 80+)")
 
     return result
