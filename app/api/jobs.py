@@ -344,28 +344,16 @@ async def process_job(job_id: str, original_resolution: bool):
         try:
             # Update status to PROCESSING
             crud.update_job_status(db, job_id, "PROCESSING")
-            crud.update_job_step(db, job_id, "PREFLIGHT", 5)
+            # Preflight step removed - now runs once at server startup
+            crud.update_job_step(db, job_id, "COLMAP_FEAT", 15)
             db.commit()
 
             with open(log_file_path, 'w') as log_file:
                 log_file.write(f">> [Job {job_id}] Starting reconstruction pipeline\n")
                 log_file.flush()
 
-                # Run preflight check
-                from app.utils.preflight import run_preflight_check
-
-                log_file.write(">> [PREFLIGHT] Running environment checks...\n")
-                log_file.flush()
-
-                preflight_result = run_preflight_check()
-                log_file.write(preflight_result.get_summary() + "\n")
-                log_file.flush()
-
-                if preflight_result.is_fatal():
-                    raise RuntimeError(f"Preflight check failed: {', '.join(preflight_result.errors)}")
-
-                log_file.write(">> [PREFLIGHT] All checks passed, proceeding...\n")
-                log_file.flush()
+                # Preflight check moved to server startup (see app/main.py)
+                # This saves 1-2 seconds per job
 
                 # Initialize COLMAP pipeline
                 colmap = COLMAPPipeline(job_dir)
