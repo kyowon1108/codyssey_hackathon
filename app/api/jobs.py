@@ -50,7 +50,8 @@ def generate_pub_key() -> str:
 @router.post("/jobs", response_model=JobCreateResponse)
 async def create_job(
     files: List[UploadFile] = File(...),
-    original_resolution: bool = Form(False)
+    original_resolution: bool = Form(False),
+    iterations: int = Form(None)
 ):
     """
     Create new reconstruction job
@@ -58,6 +59,7 @@ async def create_job(
     Args:
         files: List of uploaded image files
         original_resolution: Whether to use original image resolution
+        iterations: Number of training iterations (optional, defaults to settings.TRAINING_ITERATIONS)
 
     Returns:
         Job creation response with job_id and pub_key
@@ -110,7 +112,8 @@ async def create_job(
             job_id=job_id,
             pub_key=pub_key,
             image_count=len(files),
-            original_resolution=original_resolution
+            original_resolution=original_resolution,
+            iterations=iterations
         )
         db.commit()
     finally:
