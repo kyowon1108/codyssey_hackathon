@@ -392,12 +392,10 @@ async def process_job(job_id: str, original_resolution: bool):
                 log_file.flush()
                 await colmap.convert_to_text(work_dir / "sparse" / "0", log_file)
 
-                # Step 5.5: Create train/test split for evaluation
-                log_file.write(">> [COLMAP] Creating train/test split for evaluation...\n")
-                log_file.flush()
-                colmap.create_train_test_split(work_dir)
+                # Train/test split removed - not needed without evaluation
+                # Saves 5-10 seconds and disk space
 
-                # Step 5.6: Validate COLMAP reconstruction quality
+                # Step 5.5: Validate COLMAP reconstruction quality
                 crud.update_job_step(db, job_id, "COLMAP_VALIDATE", 60)
                 db.commit()
                 log_file.write(">> [COLMAP_VALIDATE] Validating reconstruction quality...\n")
