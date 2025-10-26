@@ -1,8 +1,4 @@
-# InstaRecon3D - Gaussian Splatting 3D Reconstruction API
-
-FastAPI 기반 3D 재구성 서비스로, 여러 이미지를 업로드하면 COLMAP과 Gaussian Splatting을 사용하여 3D 모델을 자동 생성하고 웹 뷰어로 확인할 수 있습니다.
-
-**MVP 최적화 완료**: 핵심 파이프라인 단순화로 처리 시간 **55% 단축** (기존 10-15분 → 6-7분)
+# Scan&Sell 3DGS API SERVER
 
 ## 목차
 
