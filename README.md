@@ -49,10 +49,11 @@ FastAPI 기반 3D 재구성 서비스로, 여러 이미지를 업로드하면 CO
 | **Gaussian 품질** | - | 97% 유지 (3% 노이즈 제거) | 필터링 적용 |
 
 ### 제거된 기능
-- Model Evaluation (PSNR, SSIM, LPIPS) - 사용자가 3D 뷰어에서 직접 품질 확인
-- Train/Test Split - Evaluation 제거로 불필요
-- Job별 Preflight Check - 서버 시작 시 1회만 실행
-- COLMAP 검증 단순화 - 5가지 → 2가지 필수 조건만 (필수 파일 존재, 최소 3장)
+- **Model Evaluation** (PSNR, SSIM, LPIPS) - 사용자가 3D 뷰어에서 직접 품질 확인
+- **Train/Test Split** - Evaluation 제거로 불필요
+- **Job별 Preflight Check** - 서버 시작 시 1회만 실행
+- **COLMAP 검증 단순화** - 5가지 → 2가지 필수 조건만 (필수 파일 존재, 최소 3장)
+- **Dead Code 제거** - 미사용 함수 및 파라미터 정리 (77줄 감소)
 
 
 
