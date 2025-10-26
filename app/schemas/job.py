@@ -25,15 +25,10 @@ class JobStatusResponse(BaseModel):
     processing_time_seconds: Optional[float] = None
     image_count: Optional[int] = None
     iterations: Optional[int] = None
-    gaussian_count: Optional[int] = None
-    filtered_count: Optional[int] = None
-    removed_count: Optional[int] = None
-    file_size_mb: Optional[float] = None
+    # Removed for MVP: gaussian_count, filtered_count, removed_count, file_size_mb
     colmap_registered_images: Optional[int] = None
     colmap_points: Optional[int] = None
-    psnr: Optional[float] = None  # PSNR metric
-    ssim: Optional[float] = None  # SSIM metric
-    lpips: Optional[float] = None  # LPIPS metric
+    # Removed for MVP: psnr, ssim, lpips (evaluation metrics)
     viewer_url: Optional[str] = None
     error: Optional[str] = None
     error_stage: Optional[str] = None

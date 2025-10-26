@@ -50,7 +50,8 @@ def generate_pub_key() -> str:
 @router.post("/jobs", response_model=JobCreateResponse)
 async def create_job(
     files: List[UploadFile] = File(...),
-    original_resolution: bool = Form(False)
+    original_resolution: bool = Form(False),
+    iterations: int = Form(None)
 ):
     """
     Create new reconstruction job
@@ -58,6 +59,7 @@ async def create_job(
     Args:
         files: List of uploaded image files
         original_resolution: Whether to use original image resolution
+        iterations: Number of training iterations (optional, defaults to settings.TRAINING_ITERATIONS)
 
     Returns:
         Job creation response with job_id and pub_key
@@ -110,7 +112,8 @@ async def create_job(
             job_id=job_id,
             pub_key=pub_key,
             image_count=len(files),
-            original_resolution=original_resolution
+            original_resolution=original_resolution,
+            iterations=iterations
         )
         db.commit()
     finally:
@@ -188,16 +191,19 @@ async def get_job_status(job_id: str):
             step=job.step,
             progress=job.progress,
             log_tail=log_tail,
-            gaussian_count=job.gaussian_count,
-            psnr=job.psnr,
-            ssim=job.ssim,
-            lpips=job.lpips,
+            # Removed for MVP: gaussian_count, psnr, ssim, lpips
             viewer_url=viewer_url,
             error=job.error_message,
             created_at=job.created_at.isoformat() if job.created_at else None,
             started_at=job.started_at.isoformat() if job.started_at else None,
             completed_at=job.completed_at.isoformat() if job.completed_at else None,
-            queue_position=queue_position
+            queue_position=queue_position,
+            image_count=job.image_count,
+            iterations=job.iterations,
+            colmap_registered_images=job.colmap_registered_images,
+            colmap_points=job.colmap_points,
+            processing_time_seconds=job.processing_time_seconds,
+            error_stage=job.error_stage
         )
     finally:
         db.close()
@@ -261,69 +267,68 @@ async def get_point_cloud(pub_key: str):
         if job.status != "COMPLETED":
             raise HTTPException(400, "Job not completed yet")
 
-        # Try new structure first
-        ply_file = settings.DATA_DIR / job.job_id / "output" / "point_cloud" / f"iteration_{settings.TRAINING_ITERATIONS}" / "point_cloud_filtered.ply"
+        # Get iteration from job record
+        iterations = job.iterations if job.iterations else settings.TRAINING_ITERATIONS
 
-        if not ply_file.exists():
-            # Fallback to unfiltered (new structure)
-            ply_file = settings.DATA_DIR / job.job_id / "output" / "point_cloud" / f"iteration_{settings.TRAINING_ITERATIONS}" / "point_cloud.ply"
+        # Try filtered PLY first, fallback to original
+        iteration_dir = settings.DATA_DIR / job.job_id / "output" / "point_cloud" / f"iteration_{iterations}"
+        filtered_ply = iteration_dir / "point_cloud_filtered.ply"
+        original_ply = iteration_dir / "point_cloud.ply"
 
-        # Try old structure (gs_output)
-        if not ply_file.exists():
-            ply_file = settings.DATA_DIR / job.job_id / "gs_output" / "point_cloud" / f"iteration_{settings.TRAINING_ITERATIONS}" / "point_cloud_filtered.ply"
-
-        if not ply_file.exists():
-            ply_file = settings.DATA_DIR / job.job_id / "gs_output" / "point_cloud" / f"iteration_{settings.TRAINING_ITERATIONS}" / "point_cloud.ply"
+        # Prefer filtered version if it exists
+        ply_file = filtered_ply if filtered_ply.exists() else original_ply
 
         if not ply_file.exists():
             raise HTTPException(404, "Point cloud file not found")
 
-        return FileResponse(
-            path=str(ply_file),
-            media_type="application/octet-stream",
-            filename="point_cloud.ply"
-        )
+        # Check for compressed version
+        gz_file = ply_file.with_suffix('.ply.gz')
+
+        if gz_file.exists():
+            # Serve pre-compressed file
+            from fastapi.responses import Response
+            with open(gz_file, 'rb') as f:
+                content = f.read()
+
+            return Response(
+                content=content,
+                media_type="application/octet-stream",
+                headers={
+                    "Content-Encoding": "gzip",
+                    "Content-Disposition": "attachment; filename=point_cloud.ply",
+                    "Cache-Control": "public, max-age=31536000",
+                    "Vary": "Accept-Encoding"
+                }
+            )
+        else:
+            # Fallback to uncompressed
+            return FileResponse(
+                path=str(ply_file),
+                media_type="application/octet-stream",
+                filename="point_cloud.ply",
+                headers={"Cache-Control": "public, max-age=31536000"}
+            )
     finally:
         db.close()
 
 
-@router.get("/pub/{pub_key}/scene.splat")
+@router.get("/pub/{pub_key}/scene.splat", deprecated=True)
 async def get_splat_file(pub_key: str):
     """
-    Download splat file for viewer
+    [DEPRECATED] Splat format is no longer supported.
+
+    PlayCanvas viewer uses PLY format. Use `/recon/pub/{pub_key}/cloud.ply` instead.
 
     Args:
         pub_key: Public key
 
     Returns:
-        Splat file
+        HTTP 410 Gone
     """
-    db = SessionLocal()
-    try:
-        job = crud.get_job_by_pub_key(db, pub_key)
-        if not job:
-            raise HTTPException(404, "Job not found")
-
-        if job.status != "COMPLETED":
-            raise HTTPException(400, "Job not completed yet")
-
-        # Try new structure first
-        splat_file = settings.DATA_DIR / job.job_id / "output" / "point_cloud" / f"iteration_{settings.TRAINING_ITERATIONS}" / "scene.splat"
-
-        # Try old structure (gs_output)
-        if not splat_file.exists():
-            splat_file = settings.DATA_DIR / job.job_id / "gs_output" / "point_cloud" / f"iteration_{settings.TRAINING_ITERATIONS}" / "scene.splat"
-
-        if not splat_file.exists():
-            raise HTTPException(404, "Splat file not found")
-
-        return FileResponse(
-            path=str(splat_file),
-            media_type="application/octet-stream",
-            filename="scene.splat"
-        )
-    finally:
-        db.close()
+    raise HTTPException(
+        status_code=410,
+        detail="Splat format is no longer supported. Use /recon/pub/{pub_key}/cloud.ply instead. PlayCanvas viewer uses PLY format."
+    )
 
 
 async def process_job(job_id: str, original_resolution: bool):
@@ -344,28 +349,16 @@ async def process_job(job_id: str, original_resolution: bool):
         try:
             # Update status to PROCESSING
             crud.update_job_status(db, job_id, "PROCESSING")
-            crud.update_job_step(db, job_id, "PREFLIGHT", 5)
+            # Preflight step removed - now runs once at server startup
+            crud.update_job_step(db, job_id, "COLMAP_FEAT", 15)
             db.commit()
 
             with open(log_file_path, 'w') as log_file:
                 log_file.write(f">> [Job {job_id}] Starting reconstruction pipeline\n")
                 log_file.flush()
 
-                # Run preflight check
-                from app.utils.preflight import run_preflight_check
-
-                log_file.write(">> [PREFLIGHT] Running environment checks...\n")
-                log_file.flush()
-
-                preflight_result = run_preflight_check()
-                log_file.write(preflight_result.get_summary() + "\n")
-                log_file.flush()
-
-                if preflight_result.is_fatal():
-                    raise RuntimeError(f"Preflight check failed: {', '.join(preflight_result.errors)}")
-
-                log_file.write(">> [PREFLIGHT] All checks passed, proceeding...\n")
-                log_file.flush()
+                # Preflight check moved to server startup (see app/main.py)
+                # This saves 1-2 seconds per job
 
                 # Initialize COLMAP pipeline
                 colmap = COLMAPPipeline(job_dir)
@@ -404,20 +397,18 @@ async def process_job(job_id: str, original_resolution: bool):
                 log_file.flush()
                 await colmap.convert_to_text(work_dir / "sparse" / "0", log_file)
 
-                # Step 5.5: Create train/test split for evaluation
-                log_file.write(">> [COLMAP] Creating train/test split for evaluation...\n")
-                log_file.flush()
-                colmap.create_train_test_split(work_dir)
+                # Train/test split removed - not needed without evaluation
+                # Saves 5-10 seconds and disk space
 
-                # Step 5.6: Validate COLMAP reconstruction quality
+                # Step 5.5: Validate COLMAP reconstruction quality
                 crud.update_job_step(db, job_id, "COLMAP_VALIDATE", 60)
                 db.commit()
                 log_file.write(">> [COLMAP_VALIDATE] Validating reconstruction quality...\n")
                 log_file.flush()
 
-                from app.utils.colmap_validator import validate_colmap_reconstruction
+                from app.utils.colmap_validator import simple_validation
 
-                validation_result = validate_colmap_reconstruction(work_dir / "sparse" / "0")
+                validation_result = simple_validation(work_dir / "sparse" / "0")
                 log_file.write(validation_result.get_summary() + "\n")
                 log_file.flush()
 
@@ -443,24 +434,18 @@ async def process_job(job_id: str, original_resolution: bool):
 
                 iteration_dir = await gs_trainer.train(log_file, iterations=iterations)
 
-                # Step 7: Evaluation
-                crud.update_job_step(db, job_id, "EVALUATION", 85)
-                db.commit()
-                log_file.write(">> [EVALUATION] Running final model evaluation...\n")
-                log_file.flush()
-                metrics = await gs_trainer.evaluate(log_file, iterations=iterations)
+                # Evaluation removed - saves 30-60s per job
+                # Users can judge quality directly in 3D viewer
 
-                # Step 8: Post-processing
+                # Step 7: Post-processing
                 crud.update_job_step(db, job_id, "EXPORT_PLY", 95)
                 db.commit()
                 log_file.write(">> [EXPORT_PLY] Post-processing results...\n")
                 log_file.flush()
                 gs_trainer.post_process(iteration_dir, log_file)
 
-                # Count Gaussians
-                ply_file = iteration_dir / "point_cloud_filtered.ply"
-                if not ply_file.exists():
-                    ply_file = iteration_dir / "point_cloud.ply"
+                # Count Gaussians (no filtered version anymore)
+                ply_file = iteration_dir / "point_cloud.ply"
 
                 gaussian_count = 0
                 if ply_file.exists():
@@ -474,21 +459,10 @@ async def process_job(job_id: str, original_resolution: bool):
                 # Update job as completed
                 crud.update_job_status(db, job_id, "COMPLETED")
                 crud.update_job_step(db, job_id, "DONE", 100)
-
-                # Update results with gaussian count and metrics
-                update_kwargs = {"gaussian_count": gaussian_count}
-                if metrics:
-                    update_kwargs["psnr"] = metrics.get("psnr")
-                    update_kwargs["ssim"] = metrics.get("ssim")
-                    update_kwargs["lpips"] = metrics.get("lpips")
-
-                crud.update_job_results(db, job_id, **update_kwargs)
                 db.commit()
 
                 # Log completion
                 success_msg = f">> [SUCCESS] Job completed! Generated {gaussian_count} Gaussians"
-                if metrics:
-                    success_msg += f" | PSNR: {metrics['psnr']:.2f}, SSIM: {metrics['ssim']:.4f}, LPIPS: {metrics['lpips']:.4f}"
                 log_file.write(success_msg + "\n")
                 log_file.flush()
                 logger.info(f"Job {job_id} completed successfully")

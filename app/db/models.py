@@ -31,16 +31,16 @@ class Job(Base):
     image_count = Column(Integer, default=0)
     iterations = Column(Integer, default=10000)
 
-    # Results
-    gaussian_count = Column(Integer, nullable=True)
-    filtered_count = Column(Integer, nullable=True)
-    removed_count = Column(Integer, nullable=True)
-    file_size_mb = Column(Float, nullable=True)
+    # Results - metrics removed for MVP (not needed by users)
+    # gaussian_count = Column(Integer, nullable=True)  # Removed
+    # filtered_count = Column(Integer, nullable=True)  # Removed
+    # removed_count = Column(Integer, nullable=True)   # Removed
+    # file_size_mb = Column(Float, nullable=True)      # Removed
 
-    # Evaluation metrics (PSNR, SSIM, LPIPS)
-    psnr = Column(Float, nullable=True)
-    ssim = Column(Float, nullable=True)
-    lpips = Column(Float, nullable=True)
+    # Evaluation metrics removed (users judge quality in 3D viewer)
+    # psnr = Column(Float, nullable=True)   # Removed - saves 30-60s
+    # ssim = Column(Float, nullable=True)   # Removed - saves 30-60s
+    # lpips = Column(Float, nullable=True)  # Removed - saves 30-60s
 
     # Error tracking
     error_message = Column(Text, nullable=True)
@@ -66,13 +66,7 @@ class Job(Base):
             "original_resolution": self.original_resolution,
             "image_count": self.image_count,
             "iterations": self.iterations,
-            "gaussian_count": self.gaussian_count,
-            "filtered_count": self.filtered_count,
-            "removed_count": self.removed_count,
-            "file_size_mb": self.file_size_mb,
-            "psnr": self.psnr,
-            "ssim": self.ssim,
-            "lpips": self.lpips,
+            # Result metrics removed for MVP
             "error_message": self.error_message,
             "error_stage": self.error_stage,
             "retry_count": self.retry_count,

@@ -108,39 +108,3 @@ class COLMAPPipeline:
         ]
 
         await run_command(cmd, log_file)
-
-    def create_train_test_split(self, work_dir: Path, test_ratio: float = 0.2) -> None:
-        """Create train/test split for evaluation"""
-        import random
-
-        images_dir = work_dir / "images"
-        if not images_dir.exists():
-            logger.warning(f"Images directory not found: {images_dir}")
-            return
-
-        # Get all image files
-        image_files = sorted(list(images_dir.glob("*.*")))
-        if len(image_files) < 3:
-            logger.warning(f"Not enough images for train/test split: {len(image_files)}")
-            return
-
-        # Calculate test set size (at least 1 image, at most test_ratio of total)
-        test_count = max(1, int(len(image_files) * test_ratio))
-
-        # Randomly select test images
-        random.seed(42)  # For reproducibility
-        test_indices = set(random.sample(range(len(image_files)), test_count))
-
-        # Create train.txt and test.txt
-        train_file = work_dir / "train.txt"
-        test_file = work_dir / "test.txt"
-
-        with open(train_file, 'w') as train_f, open(test_file, 'w') as test_f:
-            for idx, img_file in enumerate(image_files):
-                img_name = img_file.name
-                if idx in test_indices:
-                    test_f.write(f"{img_name}\n")
-                else:
-                    train_f.write(f"{img_name}\n")
-
-        logger.info(f"Created train/test split: {len(image_files) - test_count} train, {test_count} test")
