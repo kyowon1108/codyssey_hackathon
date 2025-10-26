@@ -46,11 +46,11 @@ class Settings:
     ALLOWED_MIME_TYPES: set = {'image/jpeg', 'image/png', 'image/webp'}
 
     # Gaussian Splatting training
-    TRAINING_ITERATIONS: int = int(os.getenv("TRAINING_ITERATIONS", "7000"))
-    SAVE_ITERATIONS: list = [7000]
+    TRAINING_ITERATIONS: int = int(os.getenv("TRAINING_ITERATIONS", "10000"))
+    SAVE_ITERATIONS: list = [10000]
     DENSIFY_UNTIL_ITER: int = 5000
     DENSIFICATION_INTERVAL: int = 200
-    OPACITY_RESET_INTERVAL: int = 7000
+    OPACITY_RESET_INTERVAL: int = 10000
 
     # COLMAP settings
     COLMAP_MAX_FEATURES: int = int(os.getenv("COLMAP_MAX_FEATURES", "8192"))
