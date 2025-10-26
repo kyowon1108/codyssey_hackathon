@@ -101,39 +101,18 @@ def update_job_step(
 def update_job_results(
     db: Session,
     job_id: str,
-    gaussian_count: Optional[int] = None,
-    filtered_count: Optional[int] = None,
-    removed_count: Optional[int] = None,
-    file_size_mb: Optional[float] = None,
     colmap_registered_images: Optional[int] = None,
-    colmap_points: Optional[int] = None,
-    psnr: Optional[float] = None,
-    ssim: Optional[float] = None,
-    lpips: Optional[float] = None
+    colmap_points: Optional[int] = None
 ) -> Optional[Job]:
-    """Update job results"""
+    """Update job results (MVP: COLMAP stats only)"""
     job = get_job_by_id(db, job_id)
     if not job:
         return None
 
-    if gaussian_count is not None:
-        job.gaussian_count = gaussian_count
-    if filtered_count is not None:
-        job.filtered_count = filtered_count
-    if removed_count is not None:
-        job.removed_count = removed_count
-    if file_size_mb is not None:
-        job.file_size_mb = file_size_mb
     if colmap_registered_images is not None:
         job.colmap_registered_images = colmap_registered_images
     if colmap_points is not None:
         job.colmap_points = colmap_points
-    if psnr is not None:
-        job.psnr = psnr
-    if ssim is not None:
-        job.ssim = ssim
-    if lpips is not None:
-        job.lpips = lpips
 
     db.commit()
     db.refresh(job)

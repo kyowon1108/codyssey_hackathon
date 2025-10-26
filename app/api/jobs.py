@@ -312,43 +312,23 @@ async def get_point_cloud(pub_key: str):
         db.close()
 
 
-@router.get("/pub/{pub_key}/scene.splat")
+@router.get("/pub/{pub_key}/scene.splat", deprecated=True)
 async def get_splat_file(pub_key: str):
     """
-    Download splat file for viewer
+    [DEPRECATED] Splat format is no longer supported.
+
+    PlayCanvas viewer uses PLY format. Use `/recon/pub/{pub_key}/cloud.ply` instead.
 
     Args:
         pub_key: Public key
 
     Returns:
-        Splat file
+        HTTP 410 Gone
     """
-    db = SessionLocal()
-    try:
-        job = crud.get_job_by_pub_key(db, pub_key)
-        if not job:
-            raise HTTPException(404, "Job not found")
-
-        if job.status != "COMPLETED":
-            raise HTTPException(400, "Job not completed yet")
-
-        # Try new structure first
-        splat_file = settings.DATA_DIR / job.job_id / "output" / "point_cloud" / f"iteration_{settings.TRAINING_ITERATIONS}" / "scene.splat"
-
-        # Try old structure (gs_output)
-        if not splat_file.exists():
-            splat_file = settings.DATA_DIR / job.job_id / "gs_output" / "point_cloud" / f"iteration_{settings.TRAINING_ITERATIONS}" / "scene.splat"
-
-        if not splat_file.exists():
-            raise HTTPException(404, "Splat file not found")
-
-        return FileResponse(
-            path=str(splat_file),
-            media_type="application/octet-stream",
-            filename="scene.splat"
-        )
-    finally:
-        db.close()
+    raise HTTPException(
+        status_code=410,
+        detail="Splat format is no longer supported. Use /recon/pub/{pub_key}/cloud.ply instead. PlayCanvas viewer uses PLY format."
+    )
 
 
 async def process_job(job_id: str, original_resolution: bool):
