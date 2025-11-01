@@ -145,6 +145,11 @@
                     } else if (orbitCamera._pose.angles.y < 0) {
                         orbitCamera._pose.angles.y += 360;
                     }
+
+                    // Update camera controls to apply changes
+                    if (typeof orbitCamera.update === 'function') {
+                        orbitCamera.update(dt);
+                    }
                 } else {
                     // Legacy structure
                     orbitCamera.yaw += rotationSpeed * dt;
