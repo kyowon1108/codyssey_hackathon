@@ -91,13 +91,14 @@ async def view_result_auto_rotate(pub_key: str):
         camera_pos = get_camera_position_for_viewer(job_work_dir, rotate_180=True)
 
         # Build viewer URL with auto-rotate enabled
+        # zoomOut=1.5 means 50% farther away from the model
         if camera_pos:
             x, y, z = camera_pos
-            viewer_url = f"/viewer/?load={ply_url}&cameraPosition={x:.3f},{y:.3f},{z:.3f}&autoRotate=120&disableInput=true"
-            logger.info(f"Auto-rotate viewer URL for {pub_key}: {viewer_url} (120°/s, input disabled)")
+            viewer_url = f"/viewer/?load={ply_url}&cameraPosition={x:.3f},{y:.3f},{z:.3f}&autoRotate=120&disableInput=true&zoomOut=1.5"
+            logger.info(f"Auto-rotate viewer URL for {pub_key}: {viewer_url} (120°/s, 1.5x zoom out, input disabled)")
         else:
             # Fallback to default view if camera position not available
-            viewer_url = f"/viewer/?load={ply_url}&autoRotate=120&disableInput=true"
+            viewer_url = f"/viewer/?load={ply_url}&autoRotate=120&disableInput=true&zoomOut=1.5"
             logger.warning(f"Could not read camera position for {pub_key}, using default view with auto-rotate")
 
         return RedirectResponse(url=viewer_url)

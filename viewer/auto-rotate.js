@@ -25,6 +25,7 @@
     const urlParams = new URLSearchParams(window.location.search);
     const autoRotateParam = urlParams.get('autoRotate');
     const disableInputParam = urlParams.get('disableInput');
+    const zoomOutParam = urlParams.get('zoomOut'); // Multiplier for distance (e.g., 1.5 = 50% farther)
 
     // State
     let viewer = null;
@@ -394,6 +395,25 @@
 
                 console.log('[AutoRotate] ✅ Initialized successfully!');
                 console.log('[AutoRotate] Available at: window.autoRotate');
+
+                // Apply zoom out if requested
+                if (zoomOutParam) {
+                    const zoomMultiplier = parseFloat(zoomOutParam);
+                    if (!isNaN(zoomMultiplier) && zoomMultiplier > 0) {
+                        if (orbitCamera._orbitController && orbitCamera._orbitController._targetRootPose) {
+                            const targetPose = orbitCamera._orbitController._targetRootPose;
+                            const originalDistance = targetPose.distance;
+                            targetPose.distance *= zoomMultiplier;
+
+                            // Also update current pose to avoid lerp animation
+                            if (orbitCamera._orbitController._rootPose) {
+                                orbitCamera._orbitController._rootPose.distance = targetPose.distance;
+                            }
+
+                            console.log(`[AutoRotate] 🔭 Zoom out: ${originalDistance.toFixed(2)} → ${targetPose.distance.toFixed(2)} (${zoomMultiplier}x)`);
+                        }
+                    }
+                }
 
                 // Disable input if requested (for thumbnails)
                 if (disableInputParam === 'true') {
