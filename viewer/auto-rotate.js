@@ -44,7 +44,16 @@
 
         viewer = window.viewer;
 
-        // Method 1: Check viewer.camera.script.orbitCamera
+        // Method 1: Check viewer.cameraControls (PlayCanvas Model Viewer v5.6.3+)
+        if (viewer.cameraControls && viewer.cameraControls._pose) {
+            orbitCamera = viewer.cameraControls;
+            app = viewer.app;
+            console.log('[AutoRotate] ✅ Found at: viewer.cameraControls');
+            logOrbitInfo();
+            return true;
+        }
+
+        // Method 2: Check viewer.camera.script.orbitCamera
         if (viewer.camera?.script?.orbitCamera) {
             orbitCamera = viewer.camera.script.orbitCamera;
             app = viewer.app;
@@ -53,7 +62,7 @@
             return true;
         }
 
-        // Method 2: Check viewer.orbitCamera directly
+        // Method 3: Check viewer.orbitCamera directly
         if (viewer.orbitCamera) {
             orbitCamera = viewer.orbitCamera;
             app = viewer.app;
@@ -62,7 +71,7 @@
             return true;
         }
 
-        // Method 3: Search for objects with yaw/pitch/distance properties
+        // Method 4: Search for objects with yaw/pitch/distance properties
         for (const key in viewer) {
             const obj = viewer[key];
             if (obj && typeof obj === 'object') {
@@ -86,9 +95,19 @@
         if (!orbitCamera) return;
 
         console.log('[AutoRotate] OrbitCamera properties:');
-        console.log('  yaw:', orbitCamera.yaw);
-        console.log('  pitch:', orbitCamera.pitch);
-        console.log('  distance:', orbitCamera.distance);
+
+        // Check for cameraControls._pose structure
+        if (orbitCamera._pose) {
+            console.log('  yaw (angles.y):', orbitCamera._pose.angles.y);
+            console.log('  pitch (angles.x):', orbitCamera._pose.angles.x);
+            console.log('  distance:', orbitCamera._pose.distance);
+        } else {
+            // Legacy structure
+            console.log('  yaw:', orbitCamera.yaw);
+            console.log('  pitch:', orbitCamera.pitch);
+            console.log('  distance:', orbitCamera.distance);
+        }
+
         console.log('  App found:', !!app);
     }
 
@@ -115,14 +134,27 @@
         // Create update callback
         updateCallback = function(dt) {
             if (autoRotate && !userInteracting && orbitCamera) {
-                // Increase yaw by speed degrees per second
-                orbitCamera.yaw += rotationSpeed * dt;
+                // Check for cameraControls._pose structure
+                if (orbitCamera._pose) {
+                    // Increase yaw (angles.y) by speed degrees per second
+                    orbitCamera._pose.angles.y += rotationSpeed * dt;
 
-                // Wrap around 360 degrees
-                if (orbitCamera.yaw >= 360) {
-                    orbitCamera.yaw -= 360;
-                } else if (orbitCamera.yaw < 0) {
-                    orbitCamera.yaw += 360;
+                    // Wrap around 360 degrees
+                    if (orbitCamera._pose.angles.y >= 360) {
+                        orbitCamera._pose.angles.y -= 360;
+                    } else if (orbitCamera._pose.angles.y < 0) {
+                        orbitCamera._pose.angles.y += 360;
+                    }
+                } else {
+                    // Legacy structure
+                    orbitCamera.yaw += rotationSpeed * dt;
+
+                    // Wrap around 360 degrees
+                    if (orbitCamera.yaw >= 360) {
+                        orbitCamera.yaw -= 360;
+                    } else if (orbitCamera.yaw < 0) {
+                        orbitCamera.yaw += 360;
+                    }
                 }
             }
         };
@@ -271,9 +303,9 @@
                         active: autoRotate,
                         userInteracting,
                         speed: rotationSpeed,
-                        yaw: orbitCamera?.yaw,
-                        pitch: orbitCamera?.pitch,
-                        distance: orbitCamera?.distance
+                        yaw: orbitCamera?._pose ? orbitCamera._pose.angles.y : orbitCamera?.yaw,
+                        pitch: orbitCamera?._pose ? orbitCamera._pose.angles.x : orbitCamera?.pitch,
+                        distance: orbitCamera?._pose ? orbitCamera._pose.distance : orbitCamera?.distance
                     }),
                     orbitCamera: () => orbitCamera,
                     app: () => app
