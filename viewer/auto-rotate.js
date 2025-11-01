@@ -399,10 +399,29 @@
                 if (disableInputParam === 'true') {
                     const canvas = viewer.canvas;
                     if (canvas) {
+                        // Disable mouse/touch
                         canvas.style.pointerEvents = 'none';
                         canvas.style.userSelect = 'none';
                         canvas.style.touchAction = 'none';
-                        console.log('[AutoRotate] 🔒 Input disabled (thumbnail mode)');
+
+                        // Disable keyboard input
+                        const blockKeyboard = (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            return false;
+                        };
+
+                        window.addEventListener('keydown', blockKeyboard, true);
+                        window.addEventListener('keyup', blockKeyboard, true);
+                        window.addEventListener('keypress', blockKeyboard, true);
+
+                        // Also disable PlayCanvas keyboard events if available
+                        if (app.keyboard) {
+                            app.keyboard.detach();
+                            console.log('[AutoRotate] 🔒 Keyboard detached');
+                        }
+
+                        console.log('[AutoRotate] 🔒 All input disabled (mouse/touch/keyboard)');
                     }
                 }
 
