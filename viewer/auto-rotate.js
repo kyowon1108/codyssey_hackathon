@@ -21,6 +21,11 @@
         IDLE_TIMEOUT: 2000,             // ms until auto-rotate resumes
     };
 
+    // Parse URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const autoRotateParam = urlParams.get('autoRotate');
+    const disableInputParam = urlParams.get('disableInput');
+
     // State
     let viewer = null;
     let orbitCamera = null;
@@ -225,7 +230,15 @@
     /**
      * Handle user input start (mouse down / touch start)
      */
-    function handleInputStart() {
+    function handleInputStart(event) {
+        // If input is disabled via URL parameter, prevent all interaction
+        if (disableInputParam === 'true') {
+            event.preventDefault();
+            event.stopPropagation();
+            console.log('[AutoRotate] 🚫 Input disabled (thumbnail mode)');
+            return false;
+        }
+
         if (!autoRotate) return;
 
         userInteracting = true;
@@ -242,7 +255,14 @@
     /**
      * Handle user input end (mouse up / touch end)
      */
-    function handleInputEnd() {
+    function handleInputEnd(event) {
+        // If input is disabled, block everything
+        if (disableInputParam === 'true') {
+            event.preventDefault();
+            event.stopPropagation();
+            return false;
+        }
+
         if (!autoRotate || !userInteracting) return;
 
         // Set idle timer to resume after timeout
@@ -374,6 +394,28 @@
 
                 console.log('[AutoRotate] ✅ Initialized successfully!');
                 console.log('[AutoRotate] Available at: window.autoRotate');
+
+                // Disable input if requested (for thumbnails)
+                if (disableInputParam === 'true') {
+                    const canvas = viewer.canvas;
+                    if (canvas) {
+                        canvas.style.pointerEvents = 'none';
+                        canvas.style.userSelect = 'none';
+                        canvas.style.touchAction = 'none';
+                        console.log('[AutoRotate] 🔒 Input disabled (thumbnail mode)');
+                    }
+                }
+
+                // Auto-start rotation if URL parameter is set
+                if (autoRotateParam) {
+                    const speed = parseFloat(autoRotateParam);
+                    if (!isNaN(speed) && speed > 0) {
+                        setTimeout(() => {
+                            startAutoRotate(speed);
+                            console.log(`[AutoRotate] 🚀 Auto-started from URL parameter: ${speed}°/s`);
+                        }, 500); // Small delay to ensure everything is ready
+                    }
+                }
 
             } else if (attempts >= CONFIG.SEARCH_ATTEMPTS) {
                 clearInterval(searchInterval);

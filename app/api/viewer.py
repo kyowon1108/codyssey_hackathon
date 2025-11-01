@@ -56,3 +56,50 @@ async def view_result(pub_key: str):
         return RedirectResponse(url=viewer_url)
     finally:
         db.close()
+
+
+@router.get("/v/rotate/{pub_key}")
+async def view_result_auto_rotate(pub_key: str):
+    """
+    Redirect to PlayCanvas Model Viewer with auto-rotation enabled (for thumbnails)
+
+    Features:
+    - Auto-rotation at 120°/s (non-stop)
+    - Input disabled (no mouse/touch interaction)
+    - Perfect for product thumbnails and previews
+
+    Args:
+        pub_key: Public key
+
+    Returns:
+        Redirect to viewer with auto-rotate enabled
+    """
+    db = SessionLocal()
+    try:
+        job = crud.get_job_by_pub_key(db, pub_key)
+        if not job:
+            raise HTTPException(404, "Job not found")
+
+        if job.status != "COMPLETED":
+            raise HTTPException(400, f"Job not completed yet. Current status: {job.status}")
+
+        # Build PLY file URL for PlayCanvas viewer
+        ply_url = f"{settings.BASE_URL}/recon/pub/{pub_key}/cloud.ply"
+
+        # Get camera position from first COLMAP image (rotated 180 degrees)
+        job_work_dir = Path(settings.DATA_DIR) / job.job_id / "work"
+        camera_pos = get_camera_position_for_viewer(job_work_dir, rotate_180=True)
+
+        # Build viewer URL with auto-rotate enabled
+        if camera_pos:
+            x, y, z = camera_pos
+            viewer_url = f"/viewer/?load={ply_url}&cameraPosition={x:.3f},{y:.3f},{z:.3f}&autoRotate=120&disableInput=true"
+            logger.info(f"Auto-rotate viewer URL for {pub_key}: {viewer_url} (120°/s, input disabled)")
+        else:
+            # Fallback to default view if camera position not available
+            viewer_url = f"/viewer/?load={ply_url}&autoRotate=120&disableInput=true"
+            logger.warning(f"Could not read camera position for {pub_key}, using default view with auto-rotate")
+
+        return RedirectResponse(url=viewer_url)
+    finally:
+        db.close()
