@@ -94,8 +94,8 @@ async def view_result_auto_rotate(pub_key: str):
         # Set camera much farther away by multiplying camera position
         if camera_pos:
             x, y, z = camera_pos
-            # Make camera 3x farther away
-            far_x, far_y, far_z = x * 3, y * 3, z * 3
+            # Make camera farther away
+            far_x, far_y, far_z = x * 10, y * 10, z * 10
             viewer_url = f"/viewer/?load={ply_url}&cameraPosition={far_x:.3f},{far_y:.3f},{far_z:.3f}&autoRotate=120&disableInput=true"
             logger.info(f"Auto-rotate viewer URL for {pub_key}: {viewer_url} (120°/s, 3x camera distance, input disabled)")
         else:
