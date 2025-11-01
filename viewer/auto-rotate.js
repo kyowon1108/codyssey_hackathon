@@ -396,23 +396,47 @@
                 console.log('[AutoRotate] ✅ Initialized successfully!');
                 console.log('[AutoRotate] Available at: window.autoRotate');
 
-                // Apply zoom out if requested (wait for distance > 0)
+                // Apply zoom out if requested (using camera position, not distance property)
                 if (zoomOutParam) {
                     const zoomMultiplier = parseFloat(zoomOutParam);
                     if (!isNaN(zoomMultiplier) && zoomMultiplier > 0) {
-                        // Wait for model to load and distance to be calculated
+                        // Wait for model to load and camera to be positioned
                         const applyZoom = () => {
+                            const camera = viewer.camera;
+                            if (!camera) {
+                                console.log('[AutoRotate] ⏳ Waiting for camera...');
+                                setTimeout(applyZoom, 500);
+                                return;
+                            }
+
                             const orbitCtrl = orbitCamera._orbitController;
-                            if (!orbitCtrl) return;
+                            const distance = orbitCtrl?._rootPose?.distance || 0;
+                            const camPos = camera.getPosition();
 
-                            const targetRootPose = orbitCtrl._targetRootPose;
-                            if (!targetRootPose) return;
+                            // Check all conditions: camera exists, model loaded, camera positioned
+                            const isReady = camera &&
+                                          distance > 0 &&
+                                          camPos &&
+                                          (camPos.x !== 0 || camPos.y !== 0 || camPos.z !== 0);
 
-                            // Check if distance is ready (> 0)
-                            if (targetRootPose.distance > 0) {
-                                const originalDistance = targetRootPose.distance;
+                            if (!isReady) {
+                                console.log('[AutoRotate] ⏳ Waiting for model to load and camera setup...');
+                                setTimeout(applyZoom, 500);
+                                return;
+                            }
 
-                                // KEY: Update ALL 4 poses for zoom to work!
+                            // KEY FIX: Manipulate camera position directly, not distance property!
+                            try {
+                                const originalPos = camera.getPosition().clone();
+                                const scaledPos = originalPos.clone();
+                                scaledPos.scale(zoomMultiplier);
+
+                                camera.setPosition(scaledPos);
+                                camera.lookAt(0, 0, 0); // Always look at model center
+
+                                console.log(`[AutoRotate] 🔭 Zoom out: Camera moved from ${originalPos.length().toFixed(2)} to ${scaledPos.length().toFixed(2)} (${zoomMultiplier}x)`);
+
+                                // Also update distance properties to keep consistency
                                 const poses = [
                                     orbitCtrl._targetRootPose,
                                     orbitCtrl._rootPose,
@@ -426,15 +450,24 @@
                                     }
                                 });
 
-                                console.log(`[AutoRotate] 🔭 Zoom out: ${originalDistance.toFixed(2)} → ${targetRootPose.distance.toFixed(2)} (${zoomMultiplier}x)`);
-                            } else {
-                                // Distance not ready yet, wait and retry
-                                console.log('[AutoRotate] ⏳ Waiting for model to load (distance = 0)...');
-                                setTimeout(applyZoom, 500);
+                                // Disable auto-framing to prevent reset
+                                if (orbitCamera.focus) {
+                                    orbitCamera.focus = function() {
+                                        console.log('[AutoRotate] 🚫 focus() blocked (zoom preservation)');
+                                    };
+                                }
+                                if (orbitCamera.frameModel) {
+                                    orbitCamera.frameModel = function() {
+                                        console.log('[AutoRotate] 🚫 frameModel() blocked (zoom preservation)');
+                                    };
+                                }
+
+                            } catch (error) {
+                                console.error('[AutoRotate] ❌ Zoom failed:', error);
                             }
                         };
 
-                        // Start trying to apply zoom
+                        // Start trying to apply zoom after initialization
                         setTimeout(applyZoom, 500);
                     }
                 }
