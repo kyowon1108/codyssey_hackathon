@@ -396,22 +396,36 @@
                 console.log('[AutoRotate] ✅ Initialized successfully!');
                 console.log('[AutoRotate] Available at: window.autoRotate');
 
-                // Apply zoom out if requested
+                // Apply zoom out if requested (wait for distance > 0)
                 if (zoomOutParam) {
                     const zoomMultiplier = parseFloat(zoomOutParam);
                     if (!isNaN(zoomMultiplier) && zoomMultiplier > 0) {
-                        if (orbitCamera._orbitController && orbitCamera._orbitController._targetRootPose) {
-                            const targetPose = orbitCamera._orbitController._targetRootPose;
-                            const originalDistance = targetPose.distance;
-                            targetPose.distance *= zoomMultiplier;
+                        // Wait for model to load and distance to be calculated
+                        const applyZoom = () => {
+                            if (orbitCamera._orbitController && orbitCamera._orbitController._targetRootPose) {
+                                const targetPose = orbitCamera._orbitController._targetRootPose;
 
-                            // Also update current pose to avoid lerp animation
-                            if (orbitCamera._orbitController._rootPose) {
-                                orbitCamera._orbitController._rootPose.distance = targetPose.distance;
+                                // Check if distance is ready (> 0)
+                                if (targetPose.distance > 0) {
+                                    const originalDistance = targetPose.distance;
+                                    targetPose.distance *= zoomMultiplier;
+
+                                    // Also update current pose to avoid lerp animation
+                                    if (orbitCamera._orbitController._rootPose) {
+                                        orbitCamera._orbitController._rootPose.distance = targetPose.distance;
+                                    }
+
+                                    console.log(`[AutoRotate] 🔭 Zoom out: ${originalDistance.toFixed(2)} → ${targetPose.distance.toFixed(2)} (${zoomMultiplier}x)`);
+                                } else {
+                                    // Distance not ready yet, wait and retry
+                                    console.log('[AutoRotate] ⏳ Waiting for model to load (distance = 0)...');
+                                    setTimeout(applyZoom, 500);
+                                }
                             }
+                        };
 
-                            console.log(`[AutoRotate] 🔭 Zoom out: ${originalDistance.toFixed(2)} → ${targetPose.distance.toFixed(2)} (${zoomMultiplier}x)`);
-                        }
+                        // Start trying to apply zoom
+                        setTimeout(applyZoom, 500);
                     }
                 }
 
