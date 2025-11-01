@@ -96,13 +96,23 @@
 
         console.log('[AutoRotate] OrbitCamera properties:');
 
+        // Check for _orbitController._targetRootPose (PlayCanvas Model Viewer v5.6.3+)
+        if (orbitCamera._orbitController && orbitCamera._orbitController._targetRootPose) {
+            const targetPose = orbitCamera._orbitController._targetRootPose;
+            console.log('  Structure: cameraControls._orbitController._targetRootPose');
+            console.log('  yaw (targetPose.angles.y):', targetPose.angles.y);
+            console.log('  pitch (targetPose.angles.x):', targetPose.angles.x);
+            console.log('  distance:', targetPose.distance);
+        }
         // Check for cameraControls._pose structure
-        if (orbitCamera._pose) {
+        else if (orbitCamera._pose) {
+            console.log('  Structure: cameraControls._pose');
             console.log('  yaw (angles.y):', orbitCamera._pose.angles.y);
             console.log('  pitch (angles.x):', orbitCamera._pose.angles.x);
             console.log('  distance:', orbitCamera._pose.distance);
         } else {
             // Legacy structure
+            console.log('  Structure: legacy orbitCamera');
             console.log('  yaw:', orbitCamera.yaw);
             console.log('  pitch:', orbitCamera.pitch);
             console.log('  distance:', orbitCamera.distance);
@@ -134,8 +144,27 @@
         // Create update callback
         updateCallback = function(dt) {
             if (autoRotate && !userInteracting && orbitCamera) {
-                // Check for cameraControls._pose structure
-                if (orbitCamera._pose) {
+                // Check for cameraControls with _orbitController (PlayCanvas Model Viewer v5.6.3+)
+                if (orbitCamera._orbitController && orbitCamera._orbitController._targetRootPose) {
+                    // KEY: Modify _targetRootPose, not _pose!
+                    // _targetRootPose is the target, _pose lerps to it automatically
+                    const targetPose = orbitCamera._orbitController._targetRootPose;
+
+                    if (targetPose.angles) {
+                        // Increase yaw (angles.y) by speed degrees per second
+                        targetPose.angles.y += rotationSpeed * dt;
+
+                        // Wrap around 360 degrees
+                        while (targetPose.angles.y >= 360) {
+                            targetPose.angles.y -= 360;
+                        }
+                        while (targetPose.angles.y < 0) {
+                            targetPose.angles.y += 360;
+                        }
+                    }
+                }
+                // Fallback: Check for direct _pose structure
+                else if (orbitCamera._pose) {
                     // Increase yaw (angles.y) by speed degrees per second
                     orbitCamera._pose.angles.y += rotationSpeed * dt;
 
@@ -150,8 +179,9 @@
                     if (typeof orbitCamera.update === 'function') {
                         orbitCamera.update(dt);
                     }
-                } else {
-                    // Legacy structure
+                }
+                // Legacy structure
+                else {
                     orbitCamera.yaw += rotationSpeed * dt;
 
                     // Wrap around 360 degrees
@@ -304,14 +334,34 @@
                     start: (speed) => startAutoRotate(speed),
                     stop: () => stopAutoRotate(),
                     setSpeed: (speed) => { rotationSpeed = speed; },
-                    getState: () => ({
-                        active: autoRotate,
-                        userInteracting,
-                        speed: rotationSpeed,
-                        yaw: orbitCamera?._pose ? orbitCamera._pose.angles.y : orbitCamera?.yaw,
-                        pitch: orbitCamera?._pose ? orbitCamera._pose.angles.x : orbitCamera?.pitch,
-                        distance: orbitCamera?._pose ? orbitCamera._pose.distance : orbitCamera?.distance
-                    }),
+                    getState: () => {
+                        let yaw, pitch, distance;
+
+                        // Get values from _targetRootPose if available
+                        if (orbitCamera?._orbitController?._targetRootPose) {
+                            const targetPose = orbitCamera._orbitController._targetRootPose;
+                            yaw = targetPose.angles?.y;
+                            pitch = targetPose.angles?.x;
+                            distance = targetPose.distance;
+                        } else if (orbitCamera?._pose) {
+                            yaw = orbitCamera._pose.angles.y;
+                            pitch = orbitCamera._pose.angles.x;
+                            distance = orbitCamera._pose.distance;
+                        } else {
+                            yaw = orbitCamera?.yaw;
+                            pitch = orbitCamera?.pitch;
+                            distance = orbitCamera?.distance;
+                        }
+
+                        return {
+                            active: autoRotate,
+                            userInteracting,
+                            speed: rotationSpeed,
+                            yaw,
+                            pitch,
+                            distance
+                        };
+                    },
                     orbitCamera: () => orbitCamera,
                     app: () => app
                 };
