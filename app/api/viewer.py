@@ -90,17 +90,20 @@ async def view_result_auto_rotate(pub_key: str):
         job_work_dir = Path(settings.DATA_DIR) / job.job_id / "work"
         camera_pos = get_camera_position_for_viewer(job_work_dir, rotate_180=True)
 
-        # Build viewer URL with auto-rotate enabled
+        # Build viewer URL with auto-rotate enabled and medium quality for balanced loading
         # Set camera much farther away by multiplying camera position
+        # Use quality=medium (20% points) for good quality with fast loading
+        ply_url_medium = f"{ply_url}?quality=medium"
+
         if camera_pos:
             x, y, z = camera_pos
             # Make camera farther away
             far_x, far_y, far_z = x * 10, y * 10, z * 10
-            viewer_url = f"/viewer/?load={ply_url}&cameraPosition={far_x:.3f},{far_y:.3f},{far_z:.3f}&autoRotate=120&disableInput=true"
-            logger.info(f"Auto-rotate viewer URL for {pub_key}: {viewer_url} (120°/s, 3x camera distance, input disabled)")
+            viewer_url = f"/viewer/?load={ply_url_medium}&cameraPosition={far_x:.3f},{far_y:.3f},{far_z:.3f}&autoRotate=120&disableInput=true"
+            logger.info(f"Auto-rotate viewer URL for {pub_key}: {viewer_url} (120°/s, 10x camera distance, medium quality, input disabled)")
         else:
             # Fallback to default view if camera position not available
-            viewer_url = f"/viewer/?load={ply_url}&autoRotate=120&disableInput=true"
+            viewer_url = f"/viewer/?load={ply_url_medium}&autoRotate=120&disableInput=true"
             logger.warning(f"Could not read camera position for {pub_key}, using default view with auto-rotate")
 
         return RedirectResponse(url=viewer_url)

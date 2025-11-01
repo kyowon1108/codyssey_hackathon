@@ -6,7 +6,7 @@ import secrets
 import string
 from pathlib import Path
 from typing import List
-from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Form
+from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Form, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -248,15 +248,27 @@ async def get_queue_status():
 
 
 @router.get("/pub/{pub_key}/cloud.ply")
-async def get_point_cloud(pub_key: str):
+async def get_point_cloud(
+    pub_key: str,
+    quality: str = Query("full", regex="^(light|medium|full)$")
+):
     """
-    Download point cloud PLY file
+    Download point cloud PLY file with quality options
 
     Args:
         pub_key: Public key
+        quality: Quality level (light=5%, medium=20%, full=100%)
+            - light: ~0.5MB, fastest loading, for thumbnails
+            - medium: ~2-5MB, good quality, for list views
+            - full: Original file, best quality, for detail views
 
     Returns:
-        PLY file
+        PLY file with requested quality level
+
+    Examples:
+        /pub/{pub_key}/cloud.ply?quality=light   # Fast thumbnail
+        /pub/{pub_key}/cloud.ply?quality=medium  # List view
+        /pub/{pub_key}/cloud.ply?quality=full    # Detail view (default)
     """
     db = SessionLocal()
     try:
@@ -267,47 +279,49 @@ async def get_point_cloud(pub_key: str):
         if job.status != "COMPLETED":
             raise HTTPException(400, "Job not completed yet")
 
-        # Get iteration from job record
+        # Get iteration from job record (support custom iterations)
         iterations = job.iterations if job.iterations else settings.TRAINING_ITERATIONS
 
-        # Try filtered PLY first, fallback to original
-        iteration_dir = settings.DATA_DIR / job.job_id / "output" / "point_cloud" / f"iteration_{iterations}"
-        filtered_ply = iteration_dir / "point_cloud_filtered.ply"
-        original_ply = iteration_dir / "point_cloud.ply"
+        # Determine base filename based on quality
+        if quality == "light":
+            base_filename = "point_cloud_filtered_light.ply"
+            fallback_filename = "point_cloud_light.ply"
+        elif quality == "medium":
+            base_filename = "point_cloud_filtered_medium.ply"
+            fallback_filename = "point_cloud_medium.ply"
+        else:  # full
+            base_filename = "point_cloud_filtered.ply"
+            fallback_filename = "point_cloud.ply"
 
-        # Prefer filtered version if it exists
-        ply_file = filtered_ply if filtered_ply.exists() else original_ply
+        # Build file path with iterations support
+        iteration_dir = settings.DATA_DIR / job.job_id / "output" / "point_cloud" / f"iteration_{iterations}"
+        ply_file = iteration_dir / base_filename
 
         if not ply_file.exists():
-            raise HTTPException(404, "Point cloud file not found")
+            # Fallback to alternate name
+            ply_file = iteration_dir / fallback_filename
 
-        # Check for compressed version
-        gz_file = ply_file.with_suffix('.ply.gz')
+        if not ply_file.exists():
+            # If lightweight version not found, fall back to full quality
+            if quality != "full":
+                logger.warning(f"Lightweight version '{quality}' not found for {pub_key}, serving full quality")
+                return await get_point_cloud(pub_key, quality="full")
+            else:
+                raise HTTPException(404, "Point cloud file not found")
 
-        if gz_file.exists():
-            # Serve pre-compressed file
-            from fastapi.responses import Response
-            with open(gz_file, 'rb') as f:
-                content = f.read()
+        # Get file size for logging
+        file_size_mb = ply_file.stat().st_size / (1024 * 1024)
+        logger.info(f"Serving PLY file for {pub_key}: {ply_file.name} ({file_size_mb:.2f} MB, quality={quality})")
 
-            return Response(
-                content=content,
-                media_type="application/octet-stream",
-                headers={
-                    "Content-Encoding": "gzip",
-                    "Content-Disposition": "attachment; filename=point_cloud.ply",
-                    "Cache-Control": "public, max-age=31536000",
-                    "Vary": "Accept-Encoding"
-                }
-            )
-        else:
-            # Fallback to uncompressed
-            return FileResponse(
-                path=str(ply_file),
-                media_type="application/octet-stream",
-                filename="point_cloud.ply",
-                headers={"Cache-Control": "public, max-age=31536000"}
-            )
+        return FileResponse(
+            path=str(ply_file),
+            media_type="application/octet-stream",
+            filename="point_cloud.ply",
+            headers={
+                "Cache-Control": "public, max-age=86400",  # Cache for 1 day
+                "Content-Disposition": "inline; filename=point_cloud.ply"
+            }
+        )
     finally:
         db.close()
 
@@ -455,6 +469,29 @@ async def process_job(job_id: str, original_resolution: bool):
                             if line_str.startswith("element vertex"):
                                 gaussian_count = int(line_str.split()[-1])
                                 break
+
+                # Generate lightweight versions for faster loading
+                log_file.write(">> [OPTIMIZE] Creating lightweight PLY versions...\n")
+                log_file.flush()
+
+                from app.utils.ply_downsampler import create_lightweight_versions
+
+                lightweight_results = create_lightweight_versions(
+                    original_ply_path=ply_file,
+                    create_light=True,   # 5% for thumbnails
+                    create_medium=True   # 20% for list views
+                )
+
+                # Log results
+                if lightweight_results.get('light'):
+                    light_size = lightweight_results['light'].stat().st_size / (1024 * 1024)
+                    log_file.write(f">> [OPTIMIZE] Light version created: {light_size:.2f}MB\n")
+                    log_file.flush()
+
+                if lightweight_results.get('medium'):
+                    medium_size = lightweight_results['medium'].stat().st_size / (1024 * 1024)
+                    log_file.write(f">> [OPTIMIZE] Medium version created: {medium_size:.2f}MB\n")
+                    log_file.flush()
 
                 # Update job as completed
                 crud.update_job_status(db, job_id, "COMPLETED")
